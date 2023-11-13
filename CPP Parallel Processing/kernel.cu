@@ -2,15 +2,62 @@
 #include <random>
 #include <stdio.h>
 #include <cassert>
+#include <chrono>
 
 //Libs da NVidia para uso de CUDA Cores
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "cuda_runtime_api.h"
+#include "windows.h"
 
 #define BLOCKS 1
 
-//Limite de threas por bloco = 1024
+//Limite de threads por bloco = 1024
 #define THREADS_PER_BLOCK 1024
+
+int getSPcores(cudaDeviceProp devProp)
+{  
+    int cores = 0;
+    int mp = devProp.multiProcessorCount;
+
+    switch (devProp.major)
+    {
+        case 2: // Fermi
+            if (devProp.minor == 1) cores = mp * 48;
+            else cores = mp * 32;
+            break;
+        case 3: // Kepler
+            cores = mp * 192;
+            break;
+        case 5: // Maxwell
+            cores = mp * 128;
+            break;
+        case 6: // Pascal
+            if ((devProp.minor == 1) || (devProp.minor == 2)) cores = mp * 128;
+            else if (devProp.minor == 0) cores = mp * 64;
+            else printf("Unknown device type\n");
+            break;
+        case 7: // Volta and Turing
+            if ((devProp.minor == 0) || (devProp.minor == 5)) cores = mp * 64;
+            else printf("Unknown device type\n");
+            break;
+        case 8: // Ampere
+            if (devProp.minor == 0) cores = mp * 64;
+            else if (devProp.minor == 6) cores = mp * 128;
+            else if (devProp.minor == 9) cores = mp * 128; // ada lovelace
+            else printf("Unknown device type\n");
+            break;
+        case 9: // Hopper
+            if (devProp.minor == 0) cores = mp * 128;
+            else printf("Unknown device type\n");
+            break;
+        default:
+            printf("Unknown device type\n");
+            break;
+    }
+
+    return cores;
+}
 
 __global__ void addKernel(const int* vectorA, const int* vectorB, int* sumVector)
 {
@@ -20,6 +67,11 @@ __global__ void addKernel(const int* vectorA, const int* vectorB, int* sumVector
 
 cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector)
 {
+    printf("[CUDA CORES - INÍCIO]\n");
+    printf("BLOCOS: %d\nTHREADS POR BLOCO: %d\n", BLOCKS, THREADS_PER_BLOCK);
+
+    auto clockInicioCuda = std::chrono::high_resolution_clock::now();
+
     int* dev_a = 0;
     int* dev_b = 0;
     int* dev_c = 0;
@@ -32,8 +84,26 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector)
         printf("Erro ao buscar um cudaSetDevice. Verifique se sua GPU é compatível");
         goto FreeCuda;
     }
-    
-    { // Alocação de buffer de GPU para os vetores
+
+    // Log de specs do device
+    {
+        int deviceID;
+        cudaDeviceProp devProps;
+
+        cudaStatus = cudaGetDevice(&deviceID);
+        if (cudaStatus != cudaSuccess) {
+            printf("Erro ao pegar ID do device - cudaGetDevice() - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
+            goto FreeCuda;
+        }
+
+        cudaGetDeviceProperties(&devProps, deviceID);
+        const int iCUDACores = getSPcores(devProps);
+
+        printf("Device \"%s\" selecionado.\nO device possui %d CUDA cores.\n", devProps.name, iCUDACores);
+    }
+   
+    // Alocação de buffer de GPU para os vetores
+    {
         cudaStatus = cudaMalloc((void**)&dev_a, THREADS_PER_BLOCK * sizeof(int));
         if (cudaStatus != cudaSuccess) 
         {
@@ -56,7 +126,8 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector)
         }
     }
 
-    { // Copiar memória dos vetores para o Buffer da GPU
+    // Copiar memória dos vetores para o Buffer da GPU
+    { 
         cudaStatus = cudaMemcpy(dev_a, vectorA, THREADS_PER_BLOCK * sizeof(int), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
@@ -88,7 +159,7 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector)
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) 
     {
-        printf("Erro ao executar cudaDeviceSynchronize %d  - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
+        printf("Erro ao executar cudaDeviceSynchronize %d - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
         goto FreeCuda;
     }
 
@@ -105,16 +176,26 @@ FreeCuda:
     cudaFree(dev_a);
     cudaFree(dev_b);
 
+    auto clockFimCuda = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> msProcessamento = clockFimCuda - clockInicioCuda;
+    printf("Tempo total de processamento com CUDA cores: %fms\n", msProcessamento.count());
+
+    printf("[CUDA CORES - FIM]\n");
+
     return cudaStatus;
 }
 
 int main()
 {
+    SetConsoleCP(1252);
+    SetConsoleOutputCP(1252);
+
     int vectorA  [THREADS_PER_BLOCK] = { 0 };
     int vectorB  [THREADS_PER_BLOCK] = { 0 };
     int sumvector[THREADS_PER_BLOCK] = { 0 };
 
-    {// Popular vetores com inteiros aleatórios - https://stackoverflow.com/questions/13445688/how-to-generate-a-random-number-in-c
+    // Popular vetores com inteiros aleatórios - https://stackoverflow.com/questions/13445688/how-to-generate-a-random-number-in-c
+    {
         std::random_device device;
         std::mt19937 rng(device());
 
@@ -134,7 +215,8 @@ int main()
         return 1;
     }
 
-    {//Validar somas
+    // Validar somas
+    {
         for (int i = 0; i < THREADS_PER_BLOCK; ++i)
         {
             const int valueA   = vectorA  [i];
@@ -149,11 +231,12 @@ int main()
                 return 1;
             }
 
-            printf("[%d]%d + %d = %d\n", i, valueA, valueB, sumValue);
+            //printf("[%d]%d + %d = %d\n", i, valueA, valueB, sumValue);
         }
     }
 
-    {//Limpar devices para evitar erros de profiling
+    // Limpar devices para evitar erros de profiling
+    {
         cudaStatus = cudaDeviceReset();
         if (cudaStatus != cudaSuccess)
         {
