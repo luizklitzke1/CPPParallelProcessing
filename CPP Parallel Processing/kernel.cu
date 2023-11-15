@@ -6,6 +6,8 @@
 #include <thread>
 #include <ppl.h>
 #include <iostream>
+#include <string>
+#include <format>
 
 #include "windows.h"
 
@@ -14,10 +16,10 @@
 #include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
 
-#define MATRIX_SIZE 40000
-
 using msTime = std::chrono::duration<double, std::milli>;
 using UINT = unsigned int;
+
+FILE* fp;
 
 int getSPcores(cudaDeviceProp devProp)
 {  
@@ -39,24 +41,24 @@ int getSPcores(cudaDeviceProp devProp)
         case 6: // Pascal
             if ((devProp.minor == 1) || (devProp.minor == 2)) cores = mp * 128;
             else if (devProp.minor == 0) cores = mp * 64;
-            else printf("Unknown device type\n");
+            else fprintf(fp,"Unknown device type\n");
             break;
         case 7: // Volta and Turing
             if ((devProp.minor == 0) || (devProp.minor == 5)) cores = mp * 64;
-            else printf("Unknown device type\n");
+            else fprintf(fp,"Unknown device type\n");
             break;
         case 8: // Ampere
             if (devProp.minor == 0) cores = mp * 64;
             else if (devProp.minor == 6) cores = mp * 128;
             else if (devProp.minor == 9) cores = mp * 128; // ada lovelace
-            else printf("Unknown device type\n");
+            else fprintf(fp,"Unknown device type\n");
             break;
         case 9: // Hopper
             if (devProp.minor == 0) cores = mp * 128;
-            else printf("Unknown device type\n");
+            else fprintf(fp,"Unknown device type\n");
             break;
         default:
-            printf("Unknown device type\n");
+            fprintf(fp,"Unknown device type\n");
             break;
     }
 
@@ -83,7 +85,7 @@ __global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT u
 
 cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[PRODUTO DE VETOR X MATRIZ - CUDA CORES - INÍCIO]\n");
+    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - CUDA CORES - INÍCIO]\n");
 
     float* A_GPU ;
     float* v1_GPU;
@@ -98,7 +100,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     // Definir qual device vai ser utilizado
     cudaStatus = cudaSetDevice(0);
     if (cudaStatus != cudaSuccess) {
-        printf("Erro ao buscar um cudaSetDevice. Verifique se sua GPU é compatível");
+        fprintf(fp,"Erro ao buscar um cudaSetDevice. Verifique se sua GPU é compatível");
         goto FreeCuda;
     }
 
@@ -109,18 +111,18 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
 
         cudaStatus = cudaGetDevice(&deviceID);
         if (cudaStatus != cudaSuccess) {
-            printf("Erro ao pegar ID do device - cudaGetDevice() - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
+            fprintf(fp,"Erro ao pegar ID do device - cudaGetDevice() - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
             goto FreeCuda;
         }
 
         cudaGetDeviceProperties(&devProps, deviceID);
         const int iCUDACores = getSPcores(devProps);
 
-        printf("Device \"%s\" selecionado.\n", devProps.name);
-        printf("CUDA cores: %d\tMultiprocessadores: %d\t Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.clockRate);
-        printf("Max Blocks Per MultiProcessor: %d\tMax Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
-        printf("Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
-        printf("Grid  Shape: %d - %d - %d\n", grid_shape .x, grid_shape .y, grid_shape .z);
+        fprintf(fp,"Device \"%s\" selecionado.\n", devProps.name);
+        fprintf(fp,"CUDA cores: %d\t| Multiprocessadores: %d\t| Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.warpSize);
+        fprintf(fp,"Max Blocks Per MultiProcessor: %d\t| Max Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
+        fprintf(fp,"Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
+        fprintf(fp,"Grid  Shape: %d - %d - %d\n", grid_shape .x, grid_shape .y, grid_shape .z);
     }
 
     auto clockInicioCuda = std::chrono::high_resolution_clock::now();
@@ -130,21 +132,21 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
         cudaStatus = cudaMalloc((void**)&A_GPU, uiMatrixSize * uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erroi ao alocar memória da matriz A - cudaMalloc()");
+            fprintf(fp,"Erroi ao alocar memória da matriz A - cudaMalloc()");
             goto FreeCuda;
         }
 
         cudaStatus = cudaMalloc((void**)&v1_GPU, uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao alocar memória do vetor 1 - cudaMalloc()");
+            fprintf(fp,"Erro ao alocar memória do vetor 1 - cudaMalloc()");
             goto FreeCuda;
         }
 
         cudaStatus = cudaMalloc((void**)&v2_GPU, uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess)
         {
-            printf("Erro ao alocar memória do vetor 2 - cudaMalloc()");
+            fprintf(fp,"Erro ao alocar memória do vetor 2 - cudaMalloc()");
             goto FreeCuda;
         }
     }
@@ -154,14 +156,14 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
         cudaStatus = cudaMemcpy(A_GPU, A, uiMatrixSize * uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao copiar os valores da matriz A - cudaMemcpy()");
+            fprintf(fp,"Erro ao copiar os valores da matriz A - cudaMemcpy()");
             goto FreeCuda;
         }
 
         cudaStatus = cudaMemcpy(v1_GPU, v1, uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao copiar os valores do vetor 1 - cudaMemcpy()");
+            fprintf(fp,"Erro ao copiar os valores do vetor 1 - cudaMemcpy()");
             goto FreeCuda;
         }
 
@@ -173,7 +175,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) 
     {
-        printf("Erro ao executar chamada do kernel - Cod %d - %s\n", cudaStatus, cudaGetErrorString(cudaStatus));
+        fprintf(fp,"Erro ao executar chamada do kernel - Cod %d - %s\n", cudaStatus, cudaGetErrorString(cudaStatus));
         goto FreeCuda;
     }
 
@@ -181,7 +183,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) 
     {
-        printf("Erro ao executar cudaDeviceSynchronize %d - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
+        fprintf(fp,"Erro ao executar cudaDeviceSynchronize %d - Cod %d - %s \n", cudaStatus, cudaGetErrorString(cudaStatus));
         goto FreeCuda;
     }
 
@@ -189,7 +191,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     cudaStatus = cudaMemcpy(v2, v2_GPU, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) 
     {
-        printf("Erro ao copiar memória do buffer da GPU  - cudaMemcpy()");
+        fprintf(fp,"Erro ao copiar memória do buffer da GPU  - cudaMemcpy()");
         goto FreeCuda;
     }
 
@@ -200,16 +202,16 @@ FreeCuda:
 
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
     processingTime = clockFimCuda - clockInicioCuda;
-    printf("Tempo total de processamento com CUDA cores: %fms\n", processingTime.count());
+    fprintf(fp,"Tempo total de processamento com CUDA cores: %fms\n", processingTime.count());
 
-    printf("[CUDA CORES - FIM]\n");
+    fprintf(fp,"[CUDA CORES - FIM]\n");
 
     return cudaStatus;
 }
 
 void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
+    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
 
     auto clockInicioLinear = std::chrono::high_resolution_clock::now();
 
@@ -229,17 +231,17 @@ void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize
 
     processingTime = clockFimLinear - clockInicioLinear;
 
-    printf("Tempo total de processamento linear: %fms\n", processingTime.count());
-    printf("[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
+    fprintf(fp,"Tempo total de processamento linear: %fms\n", processingTime.count());
+    fprintf(fp,"[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
 }
 
 void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
+    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
     const UINT uiSupportedThreads = std::thread::hardware_concurrency();
 
-    printf("Quantidade de threads suportadas pela CPU: %hd\n", uiSupportedThreads);
+    fprintf(fp,"Quantidade de threads suportadas pela CPU: %hd\n", uiSupportedThreads);
 
     auto clockInicio = std::chrono::high_resolution_clock::now();
 
@@ -259,14 +261,36 @@ void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMa
 
     processingTime = clockFim - clockInicio;
 
-    printf("Tempo total de processamento concorrente em CPU: %fms\n", processingTime.count());
-    printf("[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - FIM]\n");
+    fprintf(fp,"Tempo total de processamento concorrente em CPU: %fms\n", processingTime.count());
+    fprintf(fp,"[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - FIM]\n");
 }
 
 int main(int argc, char **argv)
 {
     SetConsoleCP      (1252);
     SetConsoleOutputCP(1252);
+
+    UINT uiMatrixSizeCFG = 0;
+
+    {
+        const std::string sTitulo = "[Benchmark de processamento paralelo]";
+        const std::string sOperacao = "Multiplicação de matrix NxN por vetor N - (N Sendo um número inteiro > 0)";
+
+        printf("%s\,", sTitulo.c_str());
+        printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
+
+        while (std::cout << "Informe o valor de N: " && !(std::cin >> uiMatrixSizeCFG)) {
+            std::cin.clear(); //clear bad input flag
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //discard input
+            std::cout << "Valor inválido\n";
+        }
+
+        fp = fopen("result.txt", "a");
+        fprintf(fp, "%s\n", sTitulo.c_str());
+        fprintf(fp, "\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
+    }
+
+    fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
 
     float* A ; // Matriz N * N
     float* v1; // Vetor para mult
@@ -275,12 +299,12 @@ int main(int argc, char **argv)
     float* v2CPU   ;
     float* v2CUDA  ;
 
-    A  = (float*)malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float));
-    v1 = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+    A  = (float*)malloc(uiMatrixSizeCFG * uiMatrixSizeCFG * sizeof(float));
+    v1 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
 
-    v2Linear = (float*)malloc(MATRIX_SIZE  * sizeof(float));
-    v2CPU    = (float*)malloc(MATRIX_SIZE  * sizeof(float));
-    v2CUDA   = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+    v2Linear = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
+    v2CPU    = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
+    v2CUDA   = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
     {
@@ -289,12 +313,12 @@ int main(int argc, char **argv)
 
         std::uniform_real_distribution<> getRandReal(0.1, 999.9);
 
-        for (int i = 0; i < MATRIX_SIZE; ++i)
+        for (int i = 0; i < uiMatrixSizeCFG; ++i)
         {
             //A é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
-            for (int j = 0; j < MATRIX_SIZE; ++j)
+            for (int j = 0; j < uiMatrixSizeCFG; ++j)
             {
-                A[i * MATRIX_SIZE + j] = getRandReal(rng);
+                A[i * uiMatrixSizeCFG + j] = getRandReal(rng);
             }
 
             v1[i] = getRandReal(rng);
@@ -303,19 +327,19 @@ int main(int argc, char **argv)
 
     //Processamento Linear
     msTime linearProcessingTime;
-    linearMatrixVectorProduct(A, v1, v2Linear, MATRIX_SIZE, linearProcessingTime);
+    linearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, linearProcessingTime);
 
     //Processamento com concorrencia em CPU
     msTime CPUProcessingTime;
-    CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, MATRIX_SIZE, CPUProcessingTime);
+    CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, CPUProcessingTime);
 
     msTime CUDAProcessingTime;
     //Processamento paraleo com CUDA cores
     {
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, MATRIX_SIZE, CUDAProcessingTime);
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, CUDAProcessingTime);
         if (cudaStatus != cudaSuccess)
         {
-            printf("Erro ao processar soma em CUDA");
+            fprintf(fp,"Erro ao processar soma em CUDA");
             return 1;
         }
 
@@ -324,7 +348,7 @@ int main(int argc, char **argv)
             cudaStatus = cudaDeviceReset();
             if (cudaStatus != cudaSuccess)
             {
-                printf("Erro ao executar cudaDeviceReset()");
+                fprintf(fp,"Erro ao executar cudaDeviceReset()");
                 return 1;
             }
         }
@@ -339,8 +363,10 @@ int main(int argc, char **argv)
         free(v2CUDA  );
     }
 
-    printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CPU threads/cores = %fms\n", linearProcessingTime.count() - CPUProcessingTime .count());
-    printf("[DIF] Diferença entre processamento linear e paralelizado com CUDA cores        = %fms\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
+    fprintf(fp,"\n\n[DIF] Diferença entre processamento linear e paralelizado com CPU threads/cores = %fms\n", linearProcessingTime.count() - CPUProcessingTime .count());
+    fprintf(fp,"[DIF] Diferença entre processamento linear e paralelizado com CUDA cores        = %fms\n\n\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
+
+    fclose(fp);
 
     return 0;
 }
