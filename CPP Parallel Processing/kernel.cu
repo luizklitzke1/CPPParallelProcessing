@@ -5,6 +5,7 @@
 #include <chrono>
 #include <thread>
 #include <ppl.h>
+#include <iostream>
 
 #include "windows.h"
 
@@ -115,7 +116,9 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
         cudaGetDeviceProperties(&devProps, deviceID);
         const int iCUDACores = getSPcores(devProps);
 
-        printf("Device \"%s\" selecionado.\nO device possui %d CUDA cores.\n", devProps.name, iCUDACores);
+        printf("Device \"%s\" selecionado.\n", devProps.name);
+        printf("CUDA cores: %d\tMultiprocessadores: %d\t Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.clockRate);
+        printf("Max Blocks Per MultiProcessor: %d\tMax Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
         printf("Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
         printf("Grid  Shape: %d - %d - %d\n", grid_shape .x, grid_shape .y, grid_shape .z);
     }
@@ -170,7 +173,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) 
     {
-        printf("Erro ao executar addKernel() - Cod %d - %s\n", cudaStatus, cudaGetErrorString(cudaStatus));
+        printf("Erro ao executar chamada do kernel - Cod %d - %s\n", cudaStatus, cudaGetErrorString(cudaStatus));
         goto FreeCuda;
     }
 
@@ -337,7 +340,7 @@ int main(int argc, char **argv)
     }
 
     printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CPU threads/cores = %fms\n", linearProcessingTime.count() - CPUProcessingTime .count());
-    printf("[DIF] Diferença entre processamento linear e paralelizado com CUDA cores = %fms\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
+    printf("[DIF] Diferença entre processamento linear e paralelizado com CUDA cores        = %fms\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
 
     return 0;
 }
