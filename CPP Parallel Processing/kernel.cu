@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <cassert>
 #include <chrono>
+#include <thread>
+#include <ppl.h>
 
 #include "windows.h"
 
@@ -80,7 +82,7 @@ __global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT u
 
 cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[CUDA CORES - INÍCIO]\n");
+    printf("\n\n[PRODUTO DE VETOR X MATRIZ - CUDA CORES - INÍCIO]\n");
 
     float* A_GPU ;
     float* v1_GPU;
@@ -204,7 +206,7 @@ FreeCuda:
 
 void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[PRODUTO LINEAR DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
+    printf("\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
 
     auto clockInicioLinear = std::chrono::high_resolution_clock::now();
 
@@ -225,7 +227,37 @@ void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize
     processingTime = clockFimLinear - clockInicioLinear;
 
     printf("Tempo total de processamento linear: %fms\n", processingTime.count());
-    printf("[PRODUTO LINEAR DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
+    printf("[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
+}
+
+void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
+{
+    printf("\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
+
+    const UINT uiSupportedThreads = std::thread::hardware_concurrency();
+
+    printf("Quantidade de threads suportadas pela CPU: %hd\n", uiSupportedThreads);
+
+    auto clockInicio = std::chrono::high_resolution_clock::now();
+
+    Concurrency::parallel_for<int>(0, uiMatrixSize, [&](int i)
+    {
+        float fSum = 0.0f;
+
+        for (int j = 0; j < uiMatrixSize; ++j)
+        {
+            fSum += A[i * uiMatrixSize + j] * v1[j];
+        }
+
+        v2[i] = fSum;
+    });
+
+    auto clockFim = std::chrono::high_resolution_clock::now();
+
+    processingTime = clockFim - clockInicio;
+
+    printf("Tempo total de processamento concorrente em CPU: %fms\n", processingTime.count());
+    printf("[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - FIM]\n");
 }
 
 int main(int argc, char **argv)
@@ -235,11 +267,17 @@ int main(int argc, char **argv)
 
     float* A ; // Matriz N * N
     float* v1; // Vetor para mult
-    float* v2; // Vetor resultado
+
+    float* v2Linear;
+    float* v2CPU   ;
+    float* v2CUDA  ;
 
     A  = (float*)malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float));
     v1 = (float*)malloc(MATRIX_SIZE  * sizeof(float));
-    v2 = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+
+    v2Linear = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+    v2CPU    = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+    v2CUDA   = (float*)malloc(MATRIX_SIZE  * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
     {
@@ -260,10 +298,18 @@ int main(int argc, char **argv)
         }
     }
 
+    //Processamento Linear
+    msTime linearProcessingTime;
+    linearMatrixVectorProduct(A, v1, v2Linear, MATRIX_SIZE, linearProcessingTime);
+
+    //Processamento com concorrencia em CPU
+    msTime CPUProcessingTime;
+    CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, MATRIX_SIZE, CPUProcessingTime);
+
     msTime CUDAProcessingTime;
     //Processamento paraleo com CUDA cores
     {
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2, MATRIX_SIZE, CUDAProcessingTime);
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, MATRIX_SIZE, CUDAProcessingTime);
         if (cudaStatus != cudaSuccess)
         {
             printf("Erro ao processar soma em CUDA");
@@ -281,18 +327,17 @@ int main(int argc, char **argv)
         }
     }
 
-    //Processamento Linear
-    msTime linearProcessingTime;
-    linearMatrixVectorProduct(A, v1, v2, MATRIX_SIZE, linearProcessingTime);
-
     //Liberar valores dos ponteiros de matrizes
     {
-        free(A );
-        free(v1);
-        free(v2);
+        free(A       );
+        free(v1      );
+        free(v2Linear);
+        free(v2CPU   );
+        free(v2CUDA  );
     }
 
-    printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CUDA cores = %fms\n", linearProcessingTime.count() - CUDAProcessingTime.count());
+    printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CPU threads/cores = %fms\n", linearProcessingTime.count() - CPUProcessingTime .count());
+    printf("[DIF] Diferença entre processamento linear e paralelizado com CUDA cores = %fms\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
 
     return 0;
 }
