@@ -4,18 +4,17 @@
 #include <cassert>
 #include <chrono>
 
+#include "windows.h"
+
 //Libs da NVidia para uso de CUDA Cores
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
-#include "windows.h"
 
-#define BLOCKS 1
-
-//Limite de threads por bloco = 1024
-#define THREADS_PER_BLOCK 1024
+#define MATRIX_SIZE 40000
 
 using msTime = std::chrono::duration<double, std::milli>;
+using UINT = unsigned int;
 
 int getSPcores(cudaDeviceProp devProp)
 {  
@@ -61,22 +60,35 @@ int getSPcores(cudaDeviceProp devProp)
     return cores;
 }
 
-__global__ void addKernel(const int* vectorA, const int* vectorB, int* sumVector)
+__global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize)
 {
-    const int idxThread = threadIdx.x;
-    sumVector[idxThread] = vectorA[idxThread] + vectorB[idxThread];
+    const int iMatrixRow = blockIdx.x * blockDim.x + threadIdx.x;
+    const int iMatrixCol = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (iMatrixCol == 0 && iMatrixRow < uiMatrixSize)
+    {
+        float fSum = 0.0f;
+
+        for (int i = 0; i < uiMatrixSize; ++i)
+        {
+            fSum += A[iMatrixRow * uiMatrixSize + i] * v1[i];
+        }
+
+        v2[iMatrixRow] = fSum;
+    }
 }
 
-cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector, msTime& processingTime)
+cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
     printf("\n\n[CUDA CORES - INÍCIO]\n");
-    printf("BLOCOS: %d\nTHREADS POR BLOCO: %d\n", BLOCKS, THREADS_PER_BLOCK);
 
-    auto clockInicioCuda = std::chrono::high_resolution_clock::now();
+    float* A_GPU ;
+    float* v1_GPU;
+    float* v2_GPU;
 
-    int* dev_a = 0;
-    int* dev_b = 0;
-    int* dev_c = 0;
+    dim3 block_shape = dim3(32, 32);
+    dim3 grid_shape  = dim3(max(1.0, std::ceil((float)uiMatrixSize / (float)block_shape.x)),
+                            max(1.0, std::ceil((float)uiMatrixSize / (float)block_shape.y)));
 
     cudaError_t cudaStatus = cudaError_t::cudaSuccess;
 
@@ -102,52 +114,55 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector, 
         const int iCUDACores = getSPcores(devProps);
 
         printf("Device \"%s\" selecionado.\nO device possui %d CUDA cores.\n", devProps.name, iCUDACores);
+        printf("Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
+        printf("Grid  Shape: %d - %d - %d\n", grid_shape .x, grid_shape .y, grid_shape .z);
     }
+
+    auto clockInicioCuda = std::chrono::high_resolution_clock::now();
    
     // Alocação de buffer de GPU para os vetores
     {
-        cudaStatus = cudaMalloc((void**)&dev_a, THREADS_PER_BLOCK * sizeof(int));
+        cudaStatus = cudaMalloc((void**)&A_GPU, uiMatrixSize * uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erroi ao alocar memória do vetor A - cudaMalloc()");
+            printf("Erroi ao alocar memória da matriz A - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&dev_b, THREADS_PER_BLOCK * sizeof(int));
+        cudaStatus = cudaMalloc((void**)&v1_GPU, uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao alocar memória do vetor B - cudaMalloc()");
+            printf("Erro ao alocar memória do vetor 1 - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&dev_c, THREADS_PER_BLOCK * sizeof(int));
+        cudaStatus = cudaMalloc((void**)&v2_GPU, uiMatrixSize * sizeof(float));
         if (cudaStatus != cudaSuccess)
         {
-            printf("Erro ao alocar memória do vetor de Soma - cudaMalloc()");
+            printf("Erro ao alocar memória do vetor 2 - cudaMalloc()");
             goto FreeCuda;
         }
     }
 
     // Copiar memória dos vetores para o Buffer da GPU
     { 
-        cudaStatus = cudaMemcpy(dev_a, vectorA, THREADS_PER_BLOCK * sizeof(int), cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(A_GPU, A, uiMatrixSize * uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao copiar os valores do vetor A - cudaMemcpy()");
+            printf("Erro ao copiar os valores da matriz A - cudaMemcpy()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMemcpy(dev_b, vectorB, THREADS_PER_BLOCK * sizeof(int), cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(v1_GPU, v1, uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
-            printf("Erro ao copiar os valores do vetor B - cudaMemcpy()");
+            printf("Erro ao copiar os valores do vetor 1 - cudaMemcpy()");
             goto FreeCuda;
         }
 
     }
-    
-    //Cahmada do Kernel poara processamento paralelo, com um único bloco contendo uma threada para cada index do vetor
-    addKernel << <BLOCKS, THREADS_PER_BLOCK >> > (dev_a, dev_b, dev_c);
+
+    KernelMatrixVectorProduct << <grid_shape, block_shape >> > (A_GPU, v1_GPU, v2_GPU, uiMatrixSize);
 
     //Validar erros na chamada de Kernel
     cudaStatus = cudaGetLastError();
@@ -166,7 +181,7 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector, 
     }
 
     //Copiar dados do buffer de memória da GPU - managed - de volta para memória local do host
-    cudaStatus = cudaMemcpy(sumVector, dev_c, THREADS_PER_BLOCK * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaStatus = cudaMemcpy(v2, v2_GPU, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) 
     {
         printf("Erro ao copiar memória do buffer da GPU  - cudaMemcpy()");
@@ -174,9 +189,9 @@ cudaError_t addWithCuda(const int* vectorA, const int* vectorB, int* sumVector, 
     }
 
 FreeCuda:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
+    cudaFree(A_GPU );
+    cudaFree(v1_GPU);
+    cudaFree(v2_GPU);
 
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
     processingTime = clockFimCuda - clockInicioCuda;
@@ -187,15 +202,22 @@ FreeCuda:
     return cudaStatus;
 }
 
-void addLinear(const int* vectorA, const int* vectorB, int* sumVector, msTime& processingTime)
+void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    printf("\n\n[PROCESSAMENTO LINEAR - INÍCIO]\n");
+    printf("\n\n[PRODUTO LINEAR DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
 
     auto clockInicioLinear = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < THREADS_PER_BLOCK; ++i)
+    for (int i = 0; i < uiMatrixSize; ++i)
     {
-        sumVector[i] = vectorA[i] + vectorB[i];
+        float fSum = 0.0f;
+
+        for (int j = 0; j < uiMatrixSize; ++j)
+        {
+            fSum += A[i * uiMatrixSize + j] * v1[j];
+        }
+
+        v2[i] = fSum;
     }
 
     auto clockFimLinear = std::chrono::high_resolution_clock::now();
@@ -203,60 +225,49 @@ void addLinear(const int* vectorA, const int* vectorB, int* sumVector, msTime& p
     processingTime = clockFimLinear - clockInicioLinear;
 
     printf("Tempo total de processamento linear: %fms\n", processingTime.count());
-    printf("[PROCESSAMENTO LINEAR - FIM]\n");
+    printf("[PRODUTO LINEAR DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    SetConsoleCP(1252);
+    SetConsoleCP      (1252);
     SetConsoleOutputCP(1252);
 
-    int vectorA  [THREADS_PER_BLOCK] = { 0 };
-    int vectorB  [THREADS_PER_BLOCK] = { 0 };
-    int sumvector[THREADS_PER_BLOCK] = { 0 };
+    float* A ; // Matriz N * N
+    float* v1; // Vetor para mult
+    float* v2; // Vetor resultado
 
-    // Popular vetores com inteiros aleatórios - https://stackoverflow.com/questions/13445688/how-to-generate-a-random-number-in-c
+    A  = (float*)malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float));
+    v1 = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+    v2 = (float*)malloc(MATRIX_SIZE  * sizeof(float));
+
+    // Popular vetores com valores reais aleatórios
     {
-        std::random_device device;
+        std::random_device device; //Gerar seed
         std::mt19937 rng(device());
 
-        std::uniform_int_distribution<std::mt19937::result_type> getRandInt(0, (INT_MAX / 2) - 1);
+        std::uniform_real_distribution<> getRandReal(0.1, 999.9);
 
-        for (int i = 0; i < THREADS_PER_BLOCK; ++i)
+        for (int i = 0; i < MATRIX_SIZE; ++i)
         {
-            vectorA[i] = getRandInt(rng);
-            vectorB[i] = getRandInt(rng);
+            //A é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
+            for (int j = 0; j < MATRIX_SIZE; ++j)
+            {
+                A[i * MATRIX_SIZE + j] = getRandReal(rng);
+            }
+
+            v1[i] = getRandReal(rng);
         }
     }
 
     msTime CUDAProcessingTime;
     //Processamento paraleo com CUDA cores
     {
-        cudaError_t cudaStatus = addWithCuda(vectorA, vectorB, sumvector, CUDAProcessingTime);
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2, MATRIX_SIZE, CUDAProcessingTime);
         if (cudaStatus != cudaSuccess)
         {
             printf("Erro ao processar soma em CUDA");
             return 1;
-        }
-
-        // Validar somas
-        {
-            for (int i = 0; i < THREADS_PER_BLOCK; ++i)
-            {
-                const int valueA   = vectorA  [i];
-                const int valueB   = vectorB  [i];
-                const int sumValue = sumvector[i];
-
-                assert(sumValue == valueA + valueB);
-
-                if (sumValue != valueA + valueB)
-                {
-                    printf("[%d][ERRO DE SOMA][Diferença encontrada na soma! - %d + %d != %d\n", i, valueA, valueB, sumValue);
-                    return 1;
-                }
-
-                //printf("[%d]%d + %d = %d\n", i, valueA, valueB, sumValue);
-            }
         }
 
         // Limpar devices para evitar erros de profiling
@@ -272,9 +283,16 @@ int main()
 
     //Processamento Linear
     msTime linearProcessingTime;
-    addLinear(vectorA, vectorB, sumvector, linearProcessingTime);
+    linearMatrixVectorProduct(A, v1, v2, MATRIX_SIZE, linearProcessingTime);
 
-    printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CUDA cores = %f\n", linearProcessingTime.count() - CUDAProcessingTime.count());
+    //Liberar valores dos ponteiros de matrizes
+    {
+        free(A );
+        free(v1);
+        free(v2);
+    }
+
+    printf("\n\n[DIF] Diferença entre processamento linear e paralelizado com CUDA cores = %fms\n", linearProcessingTime.count() - CUDAProcessingTime.count());
 
     return 0;
 }
