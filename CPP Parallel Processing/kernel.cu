@@ -21,6 +21,12 @@ using UINT = unsigned int;
 
 FILE* fp;
 
+struct benchResults
+{
+    std::string sMethod;
+    msTime msTimeElapsed;
+};
+
 int getSPcores(cudaDeviceProp devProp)
 {  
     int cores = 0;
@@ -85,7 +91,7 @@ __global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT u
 
 cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - CUDA CORES - INÍCIO]\n");
+    fprintf(fp,"\n\n[CUDA CORES - INÍCIO]\n");
 
     float* A_GPU ;
     float* v1_GPU;
@@ -211,7 +217,7 @@ FreeCuda:
 
 void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - INÍCIO]\n");
+    fprintf(fp,"\n\n[PROCESSAMENTO LINEAR - INÍCIO]\n");
 
     auto clockInicioLinear = std::chrono::high_resolution_clock::now();
 
@@ -232,12 +238,12 @@ void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize
     processingTime = clockFimLinear - clockInicioLinear;
 
     fprintf(fp,"Tempo total de processamento linear: %fms\n", processingTime.count());
-    fprintf(fp,"[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO LINEAR - FIM]\n");
+    fprintf(fp,"[PROCESSAMENTO LINEAR - FIM]\n");
 }
 
 void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
-    fprintf(fp,"\n\n[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
+    fprintf(fp,"\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
     const UINT uiSupportedThreads = std::thread::hardware_concurrency();
 
@@ -262,7 +268,7 @@ void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMa
     processingTime = clockFim - clockInicio;
 
     fprintf(fp,"Tempo total de processamento concorrente em CPU: %fms\n", processingTime.count());
-    fprintf(fp,"[PRODUTO DE VETOR X MATRIZ - PROCESSAMENTO CONCORRENTE EM CPU - FIM]\n");
+    fprintf(fp,"[PROCESSAMENTO CONCORRENTE EM CPU - FIM]\n");
 }
 
 int main(int argc, char **argv)
@@ -274,9 +280,9 @@ int main(int argc, char **argv)
 
     {
         const std::string sTitulo = "[Benchmark de processamento paralelo]";
-        const std::string sOperacao = "Multiplicação de matrix NxN por vetor N - (N Sendo um número inteiro > 0)";
+        const std::string sOperacao = "Multiplicação de matriz NxN por vetor N - (N Sendo um número inteiro > 0)";
 
-        printf("%s\,", sTitulo.c_str());
+        printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
 
         while (std::cout << "Informe o valor de N: " && !(std::cin >> uiMatrixSizeCFG)) {
@@ -325,18 +331,31 @@ int main(int argc, char **argv)
         }
     }
 
-    //Processamento Linear
-    msTime linearProcessingTime;
-    linearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, linearProcessingTime);
+    std::vector<benchResults> aBenchResults;
+    aBenchResults.reserve(3);
+
+    //Processamento 
+    {
+        benchResults benchResultsLinear;
+        benchResultsLinear.sMethod = "Linear em CPU";
+        linearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        aBenchResults.push_back(benchResultsLinear);
+    }
 
     //Processamento com concorrencia em CPU
-    msTime CPUProcessingTime;
-    CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, CPUProcessingTime);
+    {
+        benchResults benchResultsCPUThreads;
+        benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
+        CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        aBenchResults.push_back(benchResultsCPUThreads);
+    }
 
-    msTime CUDAProcessingTime;
     //Processamento paraleo com CUDA cores
     {
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, CUDAProcessingTime);
+        benchResults benchResultsCUDA;
+        benchResultsCUDA.sMethod = "Concorrência em CUDA Cores";
+
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, benchResultsCUDA.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
@@ -352,6 +371,8 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+
+        aBenchResults.push_back(benchResultsCUDA);
     }
 
     //Liberar valores dos ponteiros de matrizes
@@ -363,8 +384,22 @@ int main(int argc, char **argv)
         free(v2CUDA  );
     }
 
-    fprintf(fp,"\n\n[DIF] Diferença entre processamento linear e paralelizado com CPU threads/cores = %fms\n", linearProcessingTime.count() - CPUProcessingTime .count());
-    fprintf(fp,"[DIF] Diferença entre processamento linear e paralelizado com CUDA cores        = %fms\n\n\n"       , linearProcessingTime.count() - CUDAProcessingTime.count());
+    std::sort(aBenchResults.begin(), aBenchResults.end(), [](const benchResults& lhs, const benchResults& rhs)
+        {
+            return lhs.msTimeElapsed.count() < rhs.msTimeElapsed.count();
+        });
+
+    fprintf(fp, "\n\n[RESULTADOS]\n");
+    fprintf(fp, "\nTempo de execução:\n");
+
+    fprintf(fp, "|%s | %-35s | %-15s | %-17s|\n", "Pos", "Método", "Milisegundos", "Dif");
+    for (int i = 0; i < aBenchResults.size(); ++i)
+    {
+        const benchResults& benchResult = aBenchResults[i];
+        fprintf(fp, "|%d   | %-35s | %-14fms| +%-14fms|\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
+    }
+
+    fprintf(fp, "\n-----------------------------------------------------------------------------------------------\n");
 
     fclose(fp);
 
