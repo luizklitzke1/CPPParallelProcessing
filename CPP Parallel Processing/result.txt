@@ -1,0 +1,39 @@
+[Benchmark de processamento paralelo]
+
+[Configurações]
+Operação: Multiplicação de matriz NxN por vetor N - (N Sendo um número inteiro > 0)
+Valor de N: 10000
+
+
+[PROCESSAMENTO LINEAR - INÍCIO]
+Tempo total de processamento linear: 105.153100ms
+[PROCESSAMENTO LINEAR - FIM]
+
+
+[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]
+Threads pro core: 8
+Tempo total de processamento concorrente em CPU: 25.150100ms
+[PROCESSAMENTO CONCORRENTE EM CPU - FIM]
+
+
+[CUDA CORES - INÍCIO]
+
+Device "NVIDIA GeForce GTX 1070 Ti" selecionado.
+CUDA cores: 2432	| Multiprocessadores: 19	| Warp size: 32
+Max Blocks Per MultiProcessor: 32	| Max Threads per block: 1024
+Block Shape: 32 - 32 - 1
+Grid  Shape: 313 - 313 - 1
+
+Tempo total de processamento com CUDA cores: 90.169700ms
+[CUDA CORES - FIM]
+
+
+[RESULTADOS]
+
+Tempo de execução:
+|Pos | Método                              | Tempo exec.     | Dif              
+|1   | Concorrência em Threads de CPU      | 25.150100     ms| +0.000000      ms
+|2   | Concorrência em CUDA Cores          | 90.169700     ms| +65.019600     ms
+|3   | Linear em CPU                       | 105.153100    ms| +80.003000     ms
+
+-----------------------------------------------------------------------------------------------

@@ -3,11 +3,9 @@
 #include <stdio.h>
 #include <cassert>
 #include <chrono>
-#include <thread>
 #include <ppl.h>
 #include <iostream>
 #include <string>
-#include <format>
 
 #include "windows.h"
 
@@ -16,60 +14,9 @@
 #include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
 
-using msTime = std::chrono::duration<double, std::milli>;
-using UINT = unsigned int;
+#include "BenchUtils.h"
 
 FILE* fp;
-
-struct benchResults
-{
-    std::string sMethod;
-    msTime msTimeElapsed;
-};
-
-int getSPcores(cudaDeviceProp devProp)
-{  
-    int cores = 0;
-    int mp = devProp.multiProcessorCount;
-
-    switch (devProp.major)
-    {
-        case 2: // Fermi
-            if (devProp.minor == 1) cores = mp * 48;
-            else cores = mp * 32;
-            break;
-        case 3: // Kepler
-            cores = mp * 192;
-            break;
-        case 5: // Maxwell
-            cores = mp * 128;
-            break;
-        case 6: // Pascal
-            if ((devProp.minor == 1) || (devProp.minor == 2)) cores = mp * 128;
-            else if (devProp.minor == 0) cores = mp * 64;
-            else fprintf(fp,"Unknown device type\n");
-            break;
-        case 7: // Volta and Turing
-            if ((devProp.minor == 0) || (devProp.minor == 5)) cores = mp * 64;
-            else fprintf(fp,"Unknown device type\n");
-            break;
-        case 8: // Ampere
-            if (devProp.minor == 0) cores = mp * 64;
-            else if (devProp.minor == 6) cores = mp * 128;
-            else if (devProp.minor == 9) cores = mp * 128; // ada lovelace
-            else fprintf(fp,"Unknown device type\n");
-            break;
-        case 9: // Hopper
-            if (devProp.minor == 0) cores = mp * 128;
-            else fprintf(fp,"Unknown device type\n");
-            break;
-        default:
-            fprintf(fp,"Unknown device type\n");
-            break;
-    }
-
-    return cores;
-}
 
 __global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize)
 {
@@ -97,9 +44,9 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     float* v1_GPU;
     float* v2_GPU;
 
-    dim3 block_shape = dim3(32, 32);
-    dim3 grid_shape  = dim3(max(1.0, std::ceil((float)uiMatrixSize / (float)block_shape.x)),
-                            max(1.0, std::ceil((float)uiMatrixSize / (float)block_shape.y)));
+    dim3 block_shape = dim3(32, 32, 1);
+    dim3 grid_shape  = dim3(std::ceil((float)uiMatrixSize / (float)block_shape.x),
+                            std::ceil((float)uiMatrixSize / (float)block_shape.y));
 
     cudaError_t cudaStatus = cudaError_t::cudaSuccess;
 
@@ -122,9 +69,9 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
         }
 
         cudaGetDeviceProperties(&devProps, deviceID);
-        const int iCUDACores = getSPcores(devProps);
+        const int iCUDACores = CBenchUtils::GetCudaCores(devProps);
 
-        fprintf(fp,"Device \"%s\" selecionado.\n", devProps.name);
+        fprintf(fp,"\nDevice \"%s\" selecionado.\n", devProps.name);
         fprintf(fp,"CUDA cores: %d\t| Multiprocessadores: %d\t| Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.warpSize);
         fprintf(fp,"Max Blocks Per MultiProcessor: %d\t| Max Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
         fprintf(fp,"Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
@@ -208,14 +155,14 @@ FreeCuda:
 
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
     processingTime = clockFimCuda - clockInicioCuda;
-    fprintf(fp,"Tempo total de processamento com CUDA cores: %fms\n", processingTime.count());
+    fprintf(fp,"\nTempo total de processamento com CUDA cores: %fms\n", processingTime.count());
 
     fprintf(fp,"[CUDA CORES - FIM]\n");
 
     return cudaStatus;
 }
 
-void linearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
+void LinearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
 {
     fprintf(fp,"\n\n[PROCESSAMENTO LINEAR - INÍCIO]\n");
 
@@ -245,9 +192,11 @@ void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMa
 {
     fprintf(fp,"\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
     const UINT uiSupportedThreads = std::thread::hardware_concurrency();
 
-    fprintf(fp,"Quantidade de threads suportadas pela CPU: %hd\n", uiSupportedThreads);
+    fprintf(fp, "Threads pro core: %hd\n", uiSupportedThreads);
 
     auto clockInicio = std::chrono::high_resolution_clock::now();
 
@@ -338,7 +287,7 @@ int main(int argc, char **argv)
     {
         benchResults benchResultsLinear;
         benchResultsLinear.sMethod = "Linear em CPU";
-        linearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        LinearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
         aBenchResults.push_back(benchResultsLinear);
     }
 
@@ -392,11 +341,12 @@ int main(int argc, char **argv)
     fprintf(fp, "\n\n[RESULTADOS]\n");
     fprintf(fp, "\nTempo de execução:\n");
 
-    fprintf(fp, "|%s | %-35s | %-15s | %-17s|\n", "Pos", "Método", "Milisegundos", "Dif");
+    fprintf(fp, "|%s | %-35s | %-15s | %-17s\n", "Pos", "Método", "Tempo exec.", "Dif");
+    
     for (int i = 0; i < aBenchResults.size(); ++i)
     {
         const benchResults& benchResult = aBenchResults[i];
-        fprintf(fp, "|%d   | %-35s | %-14fms| +%-14fms|\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
+        fprintf(fp, "|%d   | %-35s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
     }
 
     fprintf(fp, "\n-----------------------------------------------------------------------------------------------\n");
