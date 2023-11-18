@@ -18,8 +18,7 @@
 
 FILE* fp;
 
-#define BLOCK_SIZE 1
-#define TILE_SIZE  4
+#define BLOCK_SIZE 4
 
 struct Matrix
 {
@@ -44,11 +43,11 @@ __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, co
  __device__ Matrix GetSubMatrix(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
     Matrix subMatrix;
-    subMatrix.width    = TILE_SIZE;
-    subMatrix.height   = TILE_SIZE;
+    subMatrix.width    = BLOCK_SIZE;
+    subMatrix.height   = BLOCK_SIZE;
     subMatrix.stride   = matrix.stride;
-    subMatrix.elements = &matrix.elements[matrix.stride * TILE_SIZE * uiRow
-                                                        + TILE_SIZE * uiCol];
+    subMatrix.elements = &matrix.elements[matrix.stride * BLOCK_SIZE * uiRow
+                                                        + BLOCK_SIZE * uiCol];
 
     return subMatrix;
 }
@@ -67,7 +66,7 @@ __global__ void KernelMatrixProduct(const Matrix A, const Matrix B, Matrix C)
     const UINT uiRowSub = threadIdx.y;
     const UINT uiColSub = threadIdx.x;
 
-    for (size_t idxSubMatrix = 0; idxSubMatrix < (A.width / TILE_SIZE); ++idxSubMatrix)
+    for (size_t idxSubMatrix = 0; idxSubMatrix < (A.width / BLOCK_SIZE); ++idxSubMatrix)
     {
         //Sumatrizes de A e B a serem computados para submatriz de C
         const Matrix subMatrixA = GetSubMatrix(A, uiBlockRow  , idxSubMatrix);
@@ -75,14 +74,14 @@ __global__ void KernelMatrixProduct(const Matrix A, const Matrix B, Matrix C)
 
         //Cache de memória do bloco a ser computado pela thread das submatrizes de A e B
         //Sincronizado entre as threads do bloco para evitar acesso à memória global e overhead
-        __shared__ float sharedA[TILE_SIZE][TILE_SIZE];
-        __shared__ float sharedB[TILE_SIZE][TILE_SIZE];
+        __shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
+        __shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
         sharedA[uiRowSub][uiColSub] = GetElement(subMatrixA, uiRowSub, uiColSub);
         sharedB[uiRowSub][uiColSub] = GetElement(subMatrixB, uiRowSub, uiColSub);
 
         __syncthreads();
 
-        for (size_t idxItemTile = 0; idxItemTile < TILE_SIZE; ++idxItemTile)
+        for (size_t idxItemTile = 0; idxItemTile < BLOCK_SIZE; ++idxItemTile)
         {
             fSoma += sharedA[uiRowSub][idxItemTile] * sharedB[idxItemTile][uiColSub];
         }
