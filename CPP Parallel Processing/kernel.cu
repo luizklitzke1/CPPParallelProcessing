@@ -256,8 +256,7 @@ int main(int argc, char **argv)
 
     float* A ; // Matriz N * N
     float* v1; // Vetor para mult
-
-    float* v2;
+    float* v2; // Vetor resultado
 
     A  = (float*)malloc(uiMatrixSizeCFG * uiMatrixSizeCFG * sizeof(float));
     v1 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
@@ -282,52 +281,68 @@ int main(int argc, char **argv)
         }
     }
 
-    std::vector<benchResults> aBenchResults;
-    aBenchResults.reserve(3);
+    std::vector<benchResults> aBenchResultsSuccess;
+    aBenchResultsSuccess.reserve(3);
 
-    //Processamento 
+    std::vector<std::pair<benchResults, std::string>> aBenchResultsFailure;
+
+    //Processamento linear em CPU
+    benchResults benchResultsLinear;
+
+    try
     {
-        benchResults benchResultsLinear;
         benchResultsLinear.sMethod = "Linear em CPU";
         LinearMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
-        aBenchResults.push_back(benchResultsLinear);
+        aBenchResultsSuccess.push_back(benchResultsLinear);
+    }
+    catch (...)
+    {
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsLinear, "Desconhecido"));
     }
 
     //Processamento com concorrencia em CPU
+    benchResults benchResultsCPUThreads;
+    try
     {
-        benchResults benchResultsCPUThreads;
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
         CPUConcurrencyMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
-        aBenchResults.push_back(benchResultsCPUThreads);
+        aBenchResultsSuccess.push_back(benchResultsCPUThreads);
+    }
+    catch (...)
+    {
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsCPUThreads, "Desconhecido"));
     }
 
     //Processamento paralelo com CUDA cores
+    benchResults benchResultsCUDAFull   ;
+    benchResults benchResultsCUDAProcess;
+    try
     {
-        benchResults benchResultsCUDAFull;
-        benchResultsCUDAFull.sMethod = "Concorrência em CUDA Cores - Com Alocação";
-
-        benchResults benchResultsCUDAProcess;
+        benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
         cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
-            return 1;
+            throw cudaStatus;
         }
 
         // Limpar devices para evitar erros de profiling
+        cudaStatus = cudaDeviceReset();
+        if (cudaStatus != cudaSuccess)
         {
-            cudaStatus = cudaDeviceReset();
-            if (cudaStatus != cudaSuccess)
-            {
-                fprintf(fp,"Erro ao executar cudaDeviceReset()");
-                return 1;
-            }
+            fprintf(fp,"Erro ao executar cudaDeviceReset()");
+            throw cudaStatus;
         }
 
-        aBenchResults.push_back(benchResultsCUDAFull   );
-        aBenchResults.push_back(benchResultsCUDAProcess);
+        aBenchResultsSuccess.push_back(benchResultsCUDAFull   );
+        aBenchResultsSuccess.push_back(benchResultsCUDAProcess);
+    }
+    catch (cudaError_t cudaStatus)
+    {
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAFull   , cudaGetErrorString(cudaStatus)));
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAProcess, cudaGetErrorString(cudaStatus)));
     }
 
     //Liberar valores dos ponteiros de matrizes
@@ -337,7 +352,7 @@ int main(int argc, char **argv)
         free(v2);
     }
 
-    std::sort(aBenchResults.begin(), aBenchResults.end(), [](const benchResults& lhs, const benchResults& rhs)
+    std::sort(aBenchResultsSuccess.begin(), aBenchResultsSuccess.end(), [](const benchResults& lhs, const benchResults& rhs)
         {
             return lhs.msTimeElapsed.count() < rhs.msTimeElapsed.count();
         });
@@ -347,13 +362,26 @@ int main(int argc, char **argv)
 
     fprintf(fp, "|%s | %-55s | %-15s | %-17s\n", "Pos", "Método", "Tempo exec.", "Dif");
     
-    for (int i = 0; i < aBenchResults.size(); ++i)
+    for (int i = 0; i < aBenchResultsSuccess.size(); ++i)
     {
-        const benchResults& benchResult = aBenchResults[i];
-        fprintf(fp, "|%d   | %-55s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
+        const benchResults& benchResult = aBenchResultsSuccess[i];
+        fprintf(fp, "|%d   | %-55s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(),
+                                                                      benchResult.msTimeElapsed.count() - aBenchResultsSuccess.begin()->msTimeElapsed.count());
     }
 
-    fprintf(fp, "\n-----------------------------------------------------------------------------------------------\n");
+    if (aBenchResultsFailure.size())
+    {
+        fprintf(fp, "\n\nMétodos com erro de execução:\n");
+
+        for (const auto& faileure : aBenchResultsFailure)
+            fprintf(fp, "%-55s - %s\n", faileure.first.sMethod.c_str(), faileure.second.c_str());
+    }
+    else
+    {
+        fprintf(fp, "\n\nNenhum método apresentou erro!\n");
+    }
+
+    fprintf(fp, "\n%s\n", std::string(110, '-').c_str());
 
     fclose(fp);
 
