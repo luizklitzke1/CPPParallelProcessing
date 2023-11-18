@@ -36,7 +36,7 @@ __global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT u
     }
 }
 
-cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
+cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
 {
     fprintf(fp,"\n\n[CUDA CORES - INÍCIO]\n");
 
@@ -79,7 +79,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     }
 
     auto clockInicioCuda = std::chrono::high_resolution_clock::now();
-   
+
     // Alocação de buffer de GPU para os vetores
     {
         cudaStatus = cudaMalloc((void**)&A_GPU, uiMatrixSize * uiMatrixSize * sizeof(float));
@@ -122,6 +122,7 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
 
     }
 
+    auto clockInicioProcessamento = std::chrono::high_resolution_clock::now();
     KernelMatrixVectorProduct << <grid_shape, block_shape >> > (A_GPU, v1_GPU, v2_GPU, uiMatrixSize);
 
     //Validar erros na chamada de Kernel
@@ -140,6 +141,8 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
         goto FreeCuda;
     }
 
+    auto clockFinalProcessamento = std::chrono::high_resolution_clock::now();
+
     //Copiar dados do buffer de memória da GPU - managed - de volta para memória local do host
     cudaStatus = cudaMemcpy(v2, v2_GPU, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) 
@@ -154,8 +157,12 @@ FreeCuda:
     cudaFree(v2_GPU);
 
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
-    processingTime = clockFimCuda - clockInicioCuda;
-    fprintf(fp,"\nTempo total de processamento com CUDA cores: %fms\n", processingTime.count());
+
+    processingTime = clockFinalProcessamento - clockInicioProcessamento;
+    fullTime       = clockFimCuda            - clockInicioCuda        ;
+
+    fprintf(fp,"\nTempo apenas de processamento com CUDA cores: %fms\n", processingTime.count());
+    fprintf(fp,"Tempo total de processamento com CUDA cores : %fms\n" , fullTime.count());
 
     fprintf(fp,"[CUDA CORES - FIM]\n");
 
@@ -299,12 +306,15 @@ int main(int argc, char **argv)
         aBenchResults.push_back(benchResultsCPUThreads);
     }
 
-    //Processamento paraleo com CUDA cores
+    //Processamento paralelo com CUDA cores
     {
-        benchResults benchResultsCUDA;
-        benchResultsCUDA.sMethod = "Concorrência em CUDA Cores";
+        benchResults benchResultsCUDAFull;
+        benchResultsCUDAFull.sMethod = "Concorrência em CUDA Cores - Com Alocação";
 
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, benchResultsCUDA.msTimeElapsed);
+        benchResults benchResultsCUDAProcess;
+        benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
+
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
@@ -321,7 +331,8 @@ int main(int argc, char **argv)
             }
         }
 
-        aBenchResults.push_back(benchResultsCUDA);
+        aBenchResults.push_back(benchResultsCUDAFull   );
+        aBenchResults.push_back(benchResultsCUDAProcess);
     }
 
     //Liberar valores dos ponteiros de matrizes
@@ -341,12 +352,12 @@ int main(int argc, char **argv)
     fprintf(fp, "\n\n[RESULTADOS]\n");
     fprintf(fp, "\nTempo de execução:\n");
 
-    fprintf(fp, "|%s | %-35s | %-15s | %-17s\n", "Pos", "Método", "Tempo exec.", "Dif");
+    fprintf(fp, "|%s | %-55s | %-15s | %-17s\n", "Pos", "Método", "Tempo exec.", "Dif");
     
     for (int i = 0; i < aBenchResults.size(); ++i)
     {
         const benchResults& benchResult = aBenchResults[i];
-        fprintf(fp, "|%d   | %-35s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
+        fprintf(fp, "|%d   | %-55s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(), benchResult.msTimeElapsed.count() - aBenchResults.begin()->msTimeElapsed.count());
     }
 
     fprintf(fp, "\n-----------------------------------------------------------------------------------------------\n");
