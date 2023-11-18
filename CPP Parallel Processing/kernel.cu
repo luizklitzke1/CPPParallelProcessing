@@ -22,7 +22,8 @@ struct Matrix
 {
     int width  = 0;
     int height = 0;
-    float* elements;
+
+    float* elements = nullptr;
 };
 
 #define BLOCK_SIZE 32
@@ -48,7 +49,7 @@ __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, co
     return subMatrix;
 }
 
-__global__ void KernelMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C)
+__global__ void KernelMatrixProduct(const Matrix A, const Matrix B, Matrix C)
 {
     const UINT uiBlockCol = blockIdx.x;
     const UINT uiBlockRow = blockIdx.y;
@@ -89,7 +90,7 @@ __global__ void KernelMatrixVectorProduct(const Matrix A, const Matrix B, Matrix
     SetElement(subMatrixC, uiRowSub, uiColSub, fSoma);
 }
 
-cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
+cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
 {
     fprintf(fp,"\n\n[CUDA CORES - INÍCIO]\n");
 
@@ -101,9 +102,9 @@ cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UI
     B_GPU.width = B_GPU.height = uiMatrixSize;
     C_GPU.width = C_GPU.height = uiMatrixSize;
 
-    dim3 block_shape = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
-    dim3 grid_shape  = dim3(std::ceil((float)uiMatrixSize / (float)block_shape.x),
-                            std::ceil((float)uiMatrixSize / (float)block_shape.y));
+    dim3 blockGrid = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
+    dim3 gridShape = dim3(std::ceil((float)uiMatrixSize / (float)blockGrid.x),
+                          std::ceil((float)uiMatrixSize / (float)blockGrid.y));
 
     cudaError_t cudaStatus = cudaError_t::cudaSuccess;
 
@@ -131,29 +132,30 @@ cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UI
         fprintf(fp,"\nDevice \"%s\" selecionado.\n", devProps.name);
         fprintf(fp,"CUDA cores: %d\t| Multiprocessadores: %d\t| Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.warpSize);
         fprintf(fp,"Max Blocks Per MultiProcessor: %d\t| Max Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
-        fprintf(fp,"Block Shape: %d - %d - %d\n", block_shape.x, block_shape.y, block_shape.z);
-        fprintf(fp,"Grid  Shape: %d - %d - %d\n", grid_shape .x, grid_shape .y, grid_shape .z);
+        fprintf(fp,"Block Grid : %d - %d - %d\n", blockGrid.x, blockGrid.y, blockGrid.z);
+        fprintf(fp,"Grid  Shape: %d - %d - %d\n", gridShape.x, gridShape.y, gridShape.z);
     }
 
     auto clockInicioCuda = std::chrono::high_resolution_clock::now();
 
     // Alocação de buffer de GPU para os vetores
+
     {
-        cudaStatus = cudaMalloc((void**)&A_GPU, A_GPU.width * A_GPU.height * sizeof(float));
+        cudaStatus = cudaMalloc(&A_GPU.elements, A_GPU.width * A_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
             fprintf(fp,"Erroi ao alocar memória da matriz A - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&B_GPU, B_GPU.width * B_GPU.height * sizeof(float));
+        cudaStatus = cudaMalloc(&B_GPU.elements, B_GPU.width * B_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
             fprintf(fp,"Erro ao alocar memória do matriz B - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&C_GPU, C_GPU.width * C_GPU.height * sizeof(float));
+        cudaStatus = cudaMalloc(&C_GPU.elements, C_GPU.width * C_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao alocar memória do matriz C - cudaMalloc()");
@@ -179,7 +181,7 @@ cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UI
     }
 
     auto clockInicioProcessamento = std::chrono::high_resolution_clock::now();
-    KernelMatrixVectorProduct << <grid_shape, block_shape >> > (A_GPU, B_GPU, C_GPU);
+    KernelMatrixProduct << <blockGrid, gridShape >> > (A_GPU, B_GPU, C_GPU);
 
     //Validar erros na chamada de Kernel
     cudaStatus = cudaGetLastError();
@@ -225,22 +227,25 @@ FreeCuda:
     return cudaStatus;
 }
 
-void LinearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
+void LinearMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime)
 {
     fprintf(fp,"\n\n[PROCESSAMENTO LINEAR - INÍCIO]\n");
 
     auto clockInicioLinear = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < uiMatrixSize; ++i)
+    for (int i = 0; i < C.height; ++i)
     {
-        float fSum = 0.0f;
-
-        for (int j = 0; j < uiMatrixSize; ++j)
+        for (int j = 0; j < C.width; ++j)
         {
-            fSum += A[i * uiMatrixSize + j] * v1[j];
-        }
+            float fSum = 0.0f;
 
-        v2[i] = fSum;
+            for (int k = 0; k < A.width; ++k)
+            {
+                fSum += A.elements[i * A.width + k] * B.elements[k * B.width + j];
+            }
+
+            C.elements[i * C.width + j] = fSum;
+        }
     }
 
     auto clockFimLinear = std::chrono::high_resolution_clock::now();
@@ -251,7 +256,7 @@ void LinearMatrixVectorProduct(float *A, float* v1, float* v2, UINT uiMatrixSize
     fprintf(fp,"[PROCESSAMENTO LINEAR - FIM]\n");
 }
 
-void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime)
+void CPUConcurrencyMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime)
 {
     fprintf(fp,"\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
@@ -259,20 +264,23 @@ void CPUConcurrencyMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMa
     GetSystemInfo(&sysInfo);
     const UINT uiSupportedThreads = std::thread::hardware_concurrency();
 
-    fprintf(fp, "Threads pro core: %hd\n", uiSupportedThreads);
+    fprintf(fp, "Threads por core: %hd\n", uiSupportedThreads);
 
     auto clockInicio = std::chrono::high_resolution_clock::now();
 
-    Concurrency::parallel_for<int>(0, uiMatrixSize, [&](int i)
+    Concurrency::parallel_for<int>(0, C.height, [&](int i)
     {
-        float fSum = 0.0f;
-
-        for (int j = 0; j < uiMatrixSize; ++j)
+        for (int j = 0; j < C.width; ++j)
         {
-            fSum += A[i * uiMatrixSize + j] * v1[j];
-        }
+            float fSum = 0.0f;
 
-        v2[i] = fSum;
+            for (int k = 0; k < A.width; ++k)
+            {
+                fSum += A.elements[i * A.width + k] * B.elements[k * B.width + j];
+            }
+
+            C.elements[i * C.width + j] = fSum;
+        }
     });
 
     auto clockFim = std::chrono::high_resolution_clock::now();
@@ -356,7 +364,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsLinear.sMethod = "Linear em CPU";
-        //LinearMatrixVectorProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        LinearMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsLinear);
     }
     catch (...)
@@ -369,7 +377,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        //CPUConcurrencyMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        CPUConcurrencyMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsCPUThreads);
     }
     catch (...)
@@ -385,7 +393,7 @@ int main(int argc, char **argv)
         benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
+        cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
