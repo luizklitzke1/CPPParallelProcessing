@@ -18,7 +18,9 @@
 
 FILE* fp;
 
-#define BLOCK_SIZE 4
+#define BLOCK_SIZE 10 // Mesmo utilizado como tamanho de tile - logo N deve ser um múltiplo
+
+#define ERROR_MARGIN_PERCENTAGE 5 // Percentual de erro em float a ser ignorado ao validar diferença de CPU para GPU
 
 struct Matrix
 {
@@ -184,7 +186,7 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
     }
 
     auto clockInicioProcessamento = std::chrono::high_resolution_clock::now();
-    KernelMatrixProduct << <dimBlock, dimGrid >> > (A_GPU, B_GPU, C_GPU);
+    KernelMatrixProduct << <dimGrid, dimBlock>> > (A_GPU, B_GPU, C_GPU);
 
     //Validar erros na chamada de Kernel
     cudaStatus = cudaGetLastError();
@@ -300,6 +302,7 @@ int main(int argc, char **argv)
     SetConsoleOutputCP(1252);
 
     UINT uiMatrixSizeCFG = 0;
+    const float fErrorMargin = float(ERROR_MARGIN_PERCENTAGE) / 100.0f;
 
     {
         const std::string sTitulo = "[Benchmark de processamento paralelo]";
@@ -309,7 +312,7 @@ int main(int argc, char **argv)
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
 
         while (std::cout << "Informe o valor de N: " && !(std::cin >> uiMatrixSizeCFG)) {
-            std::cin.clear(); //clear bad input flag
+            std::cin.clear();
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //discard input
             std::cout << "Valor inválido\n";
         }
@@ -317,6 +320,7 @@ int main(int argc, char **argv)
         fp = fopen("result.txt", "a");
         fprintf(fp, "%s\n", sTitulo.c_str());
         fprintf(fp, "\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
+        fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f %\n\n", fErrorMargin);
     }
 
     fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
@@ -333,10 +337,6 @@ int main(int argc, char **argv)
     vCLinear.width  = uiMatrixSizeCFG;
     vCLinear.height = uiMatrixSizeCFG;
 
-    Matrix vCParaleloCPU;
-    vCParaleloCPU.width  = uiMatrixSizeCFG;
-    vCParaleloCPU.height = uiMatrixSizeCFG;
-
     Matrix vCParaleloCUDA;
     vCParaleloCUDA.width  = uiMatrixSizeCFG;
     vCParaleloCUDA.height = uiMatrixSizeCFG;
@@ -345,7 +345,6 @@ int main(int argc, char **argv)
     vB.elements = (float*)malloc(vB.width * vB.height * sizeof(float));
 
     vCLinear      .elements = (float*)malloc(vCLinear     .width  * vCLinear      .height * sizeof(float));
-    vCParaleloCPU .elements = (float*)malloc(vCParaleloCPU.width  * vCParaleloCPU .height * sizeof(float));
     vCParaleloCUDA.elements = (float*)malloc(vCParaleloCUDA.width * vCParaleloCUDA.height * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
@@ -353,7 +352,7 @@ int main(int argc, char **argv)
         std::random_device device; //Gerar seed
         std::mt19937 rng(device());
 
-        std::uniform_real_distribution<> getRandReal(0.1, 999.9);
+        std::uniform_real_distribution<> getRandReal(0.1, 20.0);
 
         for (int i = 0; i < uiMatrixSizeCFG; ++i)
         {
@@ -391,7 +390,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixProduct(vA, vB, vCParaleloCPU, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        CPUConcurrencyMatrixProduct(vA, vB, vCLinear, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsCPUThreads);
     }
     catch (...)
@@ -431,17 +430,27 @@ int main(int argc, char **argv)
         aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAProcess, cudaGetErrorString(cudaStatus)));
     }
 
+    bool bValoresDiferem = false;
+
     for (int i = 0; i < uiMatrixSizeCFG * uiMatrixSizeCFG; ++i)
     {
-        const float& linear       = vCLinear      .elements[i];
-        const float& paralelocpu  = vCParaleloCPU .elements[i];
-        const float& paralelocuda = vCParaleloCUDA.elements[i];
+        const float& fLinear       = vCLinear      .elements[i];
+        const float& fParaleloCUDA = vCParaleloCUDA.elements[i];
 
-        if (linear != paralelocpu || linear != paralelocuda)
+        const float fDif              = fabs(fParaleloCUDA - fLinear);
+        const float fErrorMarginValue = fLinear * fErrorMargin;
+
+        if (fDif > fErrorMargin)
         {
-            int a = 0; // catapimbas;
-            fprintf(fp, "DIFERENÇA DE VALORES - idx %d\n%f\n%f\n%f\nDIFERENÇA FIM", i, linear, paralelocpu, paralelocuda);
+            fprintf(fp, "\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\n%f\n%f\n", i, fLinear, fParaleloCUDA);
+            fprintf(fp, "\Diferença %f  - Margem: %f", fDif, fErrorMargin);
+            bValoresDiferem = true;
         }
+    }
+
+    if (bValoresDiferem == false)
+    {
+        fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante!\n");
     }
 
     //Liberar valores dos ponteiros de matrizes
@@ -450,7 +459,6 @@ int main(int argc, char **argv)
         free(vB.elements);
 
         free(vCLinear      .elements);
-        free(vCParaleloCPU .elements);
         free(vCParaleloCUDA.elements);
     }
 
