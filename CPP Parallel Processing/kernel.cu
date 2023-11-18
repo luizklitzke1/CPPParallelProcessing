@@ -22,7 +22,6 @@ struct Matrix
 {
     int width  = 0;
     int height = 0;
-    int stride = 0;
     float* elements;
 };
 
@@ -30,12 +29,12 @@ struct Matrix
 
 __device__ float GetElement(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
-    return matrix.elements[uiRow * matrix.stride + uiCol];
+    return matrix.elements[uiRow * matrix.width + uiCol];
 }
 
 __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, const float fValue)
 {
-    matrix.elements[uiRow * matrix.stride + uiCol] = fValue;
+    matrix.elements[uiRow * matrix.width + uiCol] = fValue;
 }
 
  __device__ Matrix GetSubMatrix(const Matrix matrix, const UINT uiRow, const UINT uiCol)
@@ -43,9 +42,8 @@ __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, co
     Matrix subMatrix;
     subMatrix.width    = BLOCK_SIZE;
     subMatrix.height   = BLOCK_SIZE;
-    subMatrix.stride   = matrix.stride;
-    subMatrix.elements = &matrix.elements[matrix.stride * BLOCK_SIZE * uiRow
-                                                        + BLOCK_SIZE * uiCol];
+    subMatrix.elements = &matrix.elements[matrix.width * BLOCK_SIZE * uiRow
+                                                       + BLOCK_SIZE * uiCol];
 
     return subMatrix;
 }
@@ -95,9 +93,13 @@ cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UI
 {
     fprintf(fp,"\n\n[CUDA CORES - INÍCIO]\n");
 
-    Matrix A_GPU;
-    Matrix B_GPU;
-    Matrix C_GPU;
+    Matrix A_GPU = { 0 };
+    Matrix B_GPU = { 0 };
+    Matrix C_GPU = { 0 };
+
+    A_GPU.width = A_GPU.height = uiMatrixSize;
+    B_GPU.width = B_GPU.height = uiMatrixSize;
+    C_GPU.width = C_GPU.height = uiMatrixSize;
 
     dim3 block_shape = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 grid_shape  = dim3(std::ceil((float)uiMatrixSize / (float)block_shape.x),
