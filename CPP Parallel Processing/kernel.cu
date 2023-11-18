@@ -20,7 +20,7 @@ FILE* fp;
 
 struct Matrix
 {
-    int width = 0;
+    int width  = 0;
     int height = 0;
     int stride = 0;
     float* elements;
@@ -28,26 +28,26 @@ struct Matrix
 
 #define BLOCK_SIZE 32
 
-__device__ float GetElement(const Matrix A, int row, int col)
+__device__ float GetElement(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
-    return A.elements[row * A.stride + col];
+    return matrix.elements[uiRow * matrix.stride + uiCol];
 }
 
-__device__ void SetElement(Matrix A, int row, int col,
-                           float value)
+__device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, const float fValue)
 {
-    A.elements[row * A.stride + col] = value;
+    matrix.elements[uiRow * matrix.stride + uiCol] = fValue;
 }
 
- __device__ Matrix GetSubMatrix(Matrix A, int row, int col)
+ __device__ Matrix GetSubMatrix(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
-    Matrix Asub;
-    Asub.width    = BLOCK_SIZE;
-    Asub.height   = BLOCK_SIZE;
-    Asub.stride   = A.stride;
-    Asub.elements = &A.elements[A.stride * BLOCK_SIZE * row
-                                         + BLOCK_SIZE * col];
-    return Asub;
+    Matrix subMatrix;
+    subMatrix.width    = BLOCK_SIZE;
+    subMatrix.height   = BLOCK_SIZE;
+    subMatrix.stride   = matrix.stride;
+    subMatrix.elements = &matrix.elements[matrix.stride * BLOCK_SIZE * uiRow
+                                                        + BLOCK_SIZE * uiCol];
+
+    return subMatrix;
 }
 
 __global__ void KernelMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C)
@@ -290,7 +290,7 @@ int main(int argc, char **argv)
 
     {
         const std::string sTitulo = "[Benchmark de processamento paralelo]";
-        const std::string sOperacao = "Multiplicação de matriz NxN por vetor N - (N Sendo um número inteiro > 0)";
+        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0)";
 
         printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
