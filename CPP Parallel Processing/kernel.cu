@@ -162,7 +162,7 @@ FreeCuda:
     fullTime       = clockFimCuda            - clockInicioCuda        ;
 
     fprintf(fp,"\nTempo apenas de processamento com CUDA cores: %fms\n", processingTime.count());
-    fprintf(fp,"Tempo total de processamento com CUDA cores : %fms\n" , fullTime.count());
+    fprintf(fp,"Tempo total de processamento e alocação com CUDA cores : %fms\n" , fullTime.count());
 
     fprintf(fp,"[CUDA CORES - FIM]\n");
 
@@ -257,16 +257,11 @@ int main(int argc, char **argv)
     float* A ; // Matriz N * N
     float* v1; // Vetor para mult
 
-    float* v2Linear;
-    float* v2CPU   ;
-    float* v2CUDA  ;
+    float* v2;
 
     A  = (float*)malloc(uiMatrixSizeCFG * uiMatrixSizeCFG * sizeof(float));
     v1 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
-
-    v2Linear = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
-    v2CPU    = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
-    v2CUDA   = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
+    v2 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
     {
@@ -294,7 +289,7 @@ int main(int argc, char **argv)
     {
         benchResults benchResultsLinear;
         benchResultsLinear.sMethod = "Linear em CPU";
-        LinearMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        LinearMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
         aBenchResults.push_back(benchResultsLinear);
     }
 
@@ -302,7 +297,7 @@ int main(int argc, char **argv)
     {
         benchResults benchResultsCPUThreads;
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixVectorProduct(A, v1, v2Linear, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        CPUConcurrencyMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
         aBenchResults.push_back(benchResultsCPUThreads);
     }
 
@@ -314,7 +309,7 @@ int main(int argc, char **argv)
         benchResults benchResultsCUDAProcess;
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2CUDA, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
@@ -337,11 +332,9 @@ int main(int argc, char **argv)
 
     //Liberar valores dos ponteiros de matrizes
     {
-        free(A       );
-        free(v1      );
-        free(v2Linear);
-        free(v2CPU   );
-        free(v2CUDA  );
+        free(A );
+        free(v1);
+        free(v2);
     }
 
     std::sort(aBenchResults.begin(), aBenchResults.end(), [](const benchResults& lhs, const benchResults& rhs)
