@@ -18,33 +18,88 @@
 
 FILE* fp;
 
-__global__ void KernelMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize)
+struct Matrix
 {
-    const int iMatrixRow = blockIdx.x * blockDim.x + threadIdx.x;
-    const int iMatrixCol = blockIdx.y * blockDim.y + threadIdx.y;
+    int width = 0;
+    int height = 0;
+    int stride = 0;
+    float* elements;
+};
 
-    if (iMatrixCol == 0 && iMatrixRow < uiMatrixSize)
-    {
-        float fSum = 0.0f;
+#define BLOCK_SIZE 32
 
-        for (int i = 0; i < uiMatrixSize; ++i)
-        {
-            fSum += A[iMatrixRow * uiMatrixSize + i] * v1[i];
-        }
-
-        v2[iMatrixRow] = fSum;
-    }
+__device__ float GetElement(const Matrix A, int row, int col)
+{
+    return A.elements[row * A.stride + col];
 }
 
-cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
+__device__ void SetElement(Matrix A, int row, int col,
+                           float value)
+{
+    A.elements[row * A.stride + col] = value;
+}
+
+ __device__ Matrix GetSubMatrix(Matrix A, int row, int col)
+{
+    Matrix Asub;
+    Asub.width    = BLOCK_SIZE;
+    Asub.height   = BLOCK_SIZE;
+    Asub.stride   = A.stride;
+    Asub.elements = &A.elements[A.stride * BLOCK_SIZE * row
+                                         + BLOCK_SIZE * col];
+    return Asub;
+}
+
+__global__ void KernelMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C)
+{
+    const UINT uiBlockCol = blockIdx.x;
+    const UINT uiBlockRow = blockIdx.y;
+
+    //Submatriz computada pelo bloco
+    Matrix subMatrixC = GetSubMatrix(C, uiBlockRow, uiBlockCol);
+
+    float fSoma = 0;
+
+    //Indices da da submatriz computados pela thread
+    const UINT uiRowSub = threadIdx.y;
+    const UINT uiColSub = threadIdx.x;
+
+    for (size_t idxSubMatrix = 0; idxSubMatrix < (A.width / BLOCK_SIZE); ++idxSubMatrix)
+    {
+        //Sumatrizes de A e B a serem computados para submatriz de C
+        const Matrix subMatrixA = GetSubMatrix(A, uiBlockRow  , idxSubMatrix);
+        const Matrix subMatrixB = GetSubMatrix(B, idxSubMatrix, uiBlockCol  );
+
+        //Cache de memória do bloco a ser computado pela thread das submatrizes de A e B
+        //Sincronizado entre as threads do bloco para evitar acesso à memória global e overhead
+        __shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
+        __shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
+        sharedA[uiRowSub][uiColSub] = GetElement(subMatrixA, uiRowSub, uiColSub);
+        sharedB[uiRowSub][uiColSub] = GetElement(subMatrixB, uiRowSub, uiColSub);
+
+        __syncthreads();
+
+        for (size_t idxItemTile = 0; idxItemTile < BLOCK_SIZE; ++idxItemTile)
+        {
+            fSoma += sharedA[uiRowSub][idxItemTile] * sharedB[idxItemTile][uiColSub];
+        }
+
+        __syncthreads();
+    }
+
+    //Escrever resultado computado localmente para a matrix C global
+    SetElement(subMatrixC, uiRowSub, uiColSub, fSoma);
+}
+
+cudaError_t CUDAMatrixVectorProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
 {
     fprintf(fp,"\n\n[CUDA CORES - INÍCIO]\n");
 
-    float* A_GPU ;
-    float* v1_GPU;
-    float* v2_GPU;
+    Matrix A_GPU;
+    Matrix B_GPU;
+    Matrix C_GPU;
 
-    dim3 block_shape = dim3(32, 32, 1);
+    dim3 block_shape = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 grid_shape  = dim3(std::ceil((float)uiMatrixSize / (float)block_shape.x),
                             std::ceil((float)uiMatrixSize / (float)block_shape.y));
 
@@ -82,48 +137,47 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
 
     // Alocação de buffer de GPU para os vetores
     {
-        cudaStatus = cudaMalloc((void**)&A_GPU, uiMatrixSize * uiMatrixSize * sizeof(float));
+        cudaStatus = cudaMalloc((void**)&A_GPU, A_GPU.width * A_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
             fprintf(fp,"Erroi ao alocar memória da matriz A - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&v1_GPU, uiMatrixSize * sizeof(float));
+        cudaStatus = cudaMalloc((void**)&B_GPU, B_GPU.width * B_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            fprintf(fp,"Erro ao alocar memória do vetor 1 - cudaMalloc()");
+            fprintf(fp,"Erro ao alocar memória do matriz B - cudaMalloc()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMalloc((void**)&v2_GPU, uiMatrixSize * sizeof(float));
+        cudaStatus = cudaMalloc((void**)&C_GPU, C_GPU.width * C_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess)
         {
-            fprintf(fp,"Erro ao alocar memória do vetor 2 - cudaMalloc()");
+            fprintf(fp,"Erro ao alocar memória do matriz C - cudaMalloc()");
             goto FreeCuda;
         }
     }
 
     // Copiar memória dos vetores para o Buffer da GPU
     { 
-        cudaStatus = cudaMemcpy(A_GPU, A, uiMatrixSize * uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(A_GPU.elements, A.elements, A_GPU.width * A_GPU.height * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
             fprintf(fp,"Erro ao copiar os valores da matriz A - cudaMemcpy()");
             goto FreeCuda;
         }
 
-        cudaStatus = cudaMemcpy(v1_GPU, v1, uiMatrixSize * sizeof(float), cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(B_GPU.elements, B.elements, B_GPU.width * B_GPU.height * sizeof(float), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) 
         {
-            fprintf(fp,"Erro ao copiar os valores do vetor 1 - cudaMemcpy()");
+            fprintf(fp,"Erro ao copiar os valores da matriz B - cudaMemcpy()");
             goto FreeCuda;
         }
-
     }
 
     auto clockInicioProcessamento = std::chrono::high_resolution_clock::now();
-    KernelMatrixVectorProduct << <grid_shape, block_shape >> > (A_GPU, v1_GPU, v2_GPU, uiMatrixSize);
+    KernelMatrixVectorProduct << <grid_shape, block_shape >> > (A_GPU, B_GPU, C_GPU);
 
     //Validar erros na chamada de Kernel
     cudaStatus = cudaGetLastError();
@@ -143,8 +197,8 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
 
     auto clockFinalProcessamento = std::chrono::high_resolution_clock::now();
 
-    //Copiar dados do buffer de memória da GPU - managed - de volta para memória local do host
-    cudaStatus = cudaMemcpy(v2, v2_GPU, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
+    //Copiar dados do buffer de memória da GPU de volta para memória local do host
+    cudaStatus = cudaMemcpy(C.elements, C_GPU.elements, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) 
     {
         fprintf(fp,"Erro ao copiar memória do buffer da GPU  - cudaMemcpy()");
@@ -152,9 +206,9 @@ cudaError_t CUDAMatrixVectorProduct(float* A, float* v1, float* v2, UINT uiMatri
     }
 
 FreeCuda:
-    cudaFree(A_GPU );
-    cudaFree(v1_GPU);
-    cudaFree(v2_GPU);
+    cudaFree(A_GPU.elements);
+    cudaFree(B_GPU.elements);
+    cudaFree(C_GPU.elements);
 
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
 
@@ -254,13 +308,21 @@ int main(int argc, char **argv)
 
     fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
 
-    float* A ; // Matriz N * N
-    float* v1; // Vetor para mult
-    float* v2; // Vetor resultado
+    Matrix vA;
+    vA.width  = uiMatrixSizeCFG;
+    vA.height = uiMatrixSizeCFG;
 
-    A  = (float*)malloc(uiMatrixSizeCFG * uiMatrixSizeCFG * sizeof(float));
-    v1 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
-    v2 = (float*)malloc(uiMatrixSizeCFG  * sizeof(float));
+    Matrix vB;
+    vB.width  = uiMatrixSizeCFG;
+    vB.height = uiMatrixSizeCFG;
+
+    Matrix vC;
+    vC.width  = uiMatrixSizeCFG;
+    vC.height = uiMatrixSizeCFG;
+
+    vA.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
+    vB.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
+    vC.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
     {
@@ -271,13 +333,13 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < uiMatrixSizeCFG; ++i)
         {
-            //A é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
+            //Memoryu for coalesced access
+            //vA e vB . elements é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
             for (int j = 0; j < uiMatrixSizeCFG; ++j)
             {
-                A[i * uiMatrixSizeCFG + j] = getRandReal(rng);
+                vA.elements[i * uiMatrixSizeCFG + j] = getRandReal(rng);
+                vB.elements[i * uiMatrixSizeCFG + j] = getRandReal(rng);
             }
-
-            v1[i] = getRandReal(rng);
         }
     }
 
@@ -292,7 +354,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsLinear.sMethod = "Linear em CPU";
-        LinearMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        //LinearMatrixVectorProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsLinear);
     }
     catch (...)
@@ -305,7 +367,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        //CPUConcurrencyMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsCPUThreads);
     }
     catch (...)
@@ -321,7 +383,7 @@ int main(int argc, char **argv)
         benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
-        cudaError_t cudaStatus = CUDAMatrixVectorProduct(A, v1, v2, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
+        cudaError_t cudaStatus = CUDAMatrixVectorProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
@@ -347,9 +409,9 @@ int main(int argc, char **argv)
 
     //Liberar valores dos ponteiros de matrizes
     {
-        free(A );
-        free(v1);
-        free(v2);
+        free(vA.elements);
+        free(vB.elements);
+        free(vC.elements);
     }
 
     std::sort(aBenchResultsSuccess.begin(), aBenchResultsSuccess.end(), [](const benchResults& lhs, const benchResults& rhs)
