@@ -18,6 +18,8 @@
 
 FILE* fp;
 
+#define BLOCK_SIZE 1
+
 struct Matrix
 {
     int width  = 0;
@@ -27,7 +29,6 @@ struct Matrix
     float* elements = nullptr;
 };
 
-#define BLOCK_SIZE 32
 
 __device__ float GetElement(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
