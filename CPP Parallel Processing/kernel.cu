@@ -22,6 +22,7 @@ struct Matrix
 {
     int width  = 0;
     int height = 0;
+    int stride = 0; //Marter tamanho de largura de uma linha em matrix representada em 1xN
 
     float* elements = nullptr;
 };
@@ -30,12 +31,12 @@ struct Matrix
 
 __device__ float GetElement(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
-    return matrix.elements[uiRow * matrix.width + uiCol];
+    return matrix.elements[uiRow * matrix.stride + uiCol];
 }
 
 __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, const float fValue)
 {
-    matrix.elements[uiRow * matrix.width + uiCol] = fValue;
+    matrix.elements[uiRow * matrix.stride + uiCol] = fValue;
 }
 
  __device__ Matrix GetSubMatrix(const Matrix matrix, const UINT uiRow, const UINT uiCol)
@@ -43,6 +44,7 @@ __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, co
     Matrix subMatrix;
     subMatrix.width    = BLOCK_SIZE;
     subMatrix.height   = BLOCK_SIZE;
+    subMatrix.stride   = matrix.stride;
     subMatrix.elements = &matrix.elements[matrix.width * BLOCK_SIZE * uiRow
                                                        + BLOCK_SIZE * uiCol];
 
@@ -98,9 +100,9 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
     Matrix B_GPU = { 0 };
     Matrix C_GPU = { 0 };
 
-    A_GPU.width = A_GPU.height = uiMatrixSize;
-    B_GPU.width = B_GPU.height = uiMatrixSize;
-    C_GPU.width = C_GPU.height = uiMatrixSize;
+    A_GPU.width = A_GPU.height = A_GPU.stride = A.height;
+    B_GPU.width = B_GPU.height = B_GPU.stride = B.height;
+    C_GPU.width = C_GPU.height = C_GPU.stride = C.height;
 
     dim3 blockGrid = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 gridShape = dim3(std::ceil((float)uiMatrixSize / (float)blockGrid.x),
@@ -202,7 +204,7 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
     auto clockFinalProcessamento = std::chrono::high_resolution_clock::now();
 
     //Copiar dados do buffer de memória da GPU de volta para memória local do host
-    cudaStatus = cudaMemcpy(C.elements, C_GPU.elements, uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaStatus = cudaMemcpy(C.elements, C_GPU.elements, uiMatrixSize * uiMatrixSize * sizeof(float), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) 
     {
         fprintf(fp,"Erro ao copiar memória do buffer da GPU  - cudaMemcpy()");
@@ -326,13 +328,24 @@ int main(int argc, char **argv)
     vB.width  = uiMatrixSizeCFG;
     vB.height = uiMatrixSizeCFG;
 
-    Matrix vC;
-    vC.width  = uiMatrixSizeCFG;
-    vC.height = uiMatrixSizeCFG;
+    Matrix vCLinear;
+    vCLinear.width  = uiMatrixSizeCFG;
+    vCLinear.height = uiMatrixSizeCFG;
 
-    vA.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
-    vB.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
-    vC.elements = (float*)malloc(vC.width * vC.height * sizeof(float));
+    Matrix vCParaleloCPU;
+    vCParaleloCPU.width  = uiMatrixSizeCFG;
+    vCParaleloCPU.height = uiMatrixSizeCFG;
+
+    Matrix vCParaleloCUDA;
+    vCParaleloCUDA.width  = uiMatrixSizeCFG;
+    vCParaleloCUDA.height = uiMatrixSizeCFG;
+
+    vA.elements = (float*)malloc(vA.width * vA.height * sizeof(float));
+    vB.elements = (float*)malloc(vB.width * vB.height * sizeof(float));
+
+    vCLinear      .elements = (float*)malloc(vCLinear     .width  * vCLinear      .height * sizeof(float));
+    vCParaleloCPU .elements = (float*)malloc(vCParaleloCPU.width  * vCParaleloCPU .height * sizeof(float));
+    vCParaleloCUDA.elements = (float*)malloc(vCParaleloCUDA.width * vCParaleloCUDA.height * sizeof(float));
 
     // Popular vetores com valores reais aleatórios
     {
@@ -364,7 +377,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsLinear.sMethod = "Linear em CPU";
-        LinearMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        LinearMatrixProduct(vA, vB, vCLinear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsLinear);
     }
     catch (...)
@@ -377,7 +390,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        CPUConcurrencyMatrixProduct(vA, vB, vCParaleloCPU, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsCPUThreads);
     }
     catch (...)
@@ -393,7 +406,7 @@ int main(int argc, char **argv)
         benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
-        cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vC, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
+        cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vCParaleloCUDA, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar soma em CUDA");
@@ -417,11 +430,27 @@ int main(int argc, char **argv)
         aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAProcess, cudaGetErrorString(cudaStatus)));
     }
 
+    for (int i = 0; i < uiMatrixSizeCFG * uiMatrixSizeCFG; ++i)
+    {
+        const float& linear       = vCLinear      .elements[i];
+        const float& paralelocpu  = vCParaleloCPU .elements[i];
+        const float& paralelocuda = vCParaleloCUDA.elements[i];
+
+        if (linear != paralelocpu || linear != paralelocuda)
+        {
+            int a = 0; // catapimbas;
+            fprintf(fp, "DIFERENÇA DE VALORES - idx %d\n%f\n%f\n%f\nDIFERENÇA FIM", i, linear, paralelocpu, paralelocuda);
+        }
+    }
+
     //Liberar valores dos ponteiros de matrizes
     {
         free(vA.elements);
         free(vB.elements);
-        free(vC.elements);
+
+        free(vCLinear      .elements);
+        free(vCParaleloCPU .elements);
+        free(vCParaleloCUDA.elements);
     }
 
     std::sort(aBenchResultsSuccess.begin(), aBenchResultsSuccess.end(), [](const benchResults& lhs, const benchResults& rhs)
