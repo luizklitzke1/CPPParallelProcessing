@@ -46,8 +46,8 @@ __device__ void SetElement(Matrix matrix, const UINT uiRow, const UINT uiCol, co
     subMatrix.width    = BLOCK_SIZE;
     subMatrix.height   = BLOCK_SIZE;
     subMatrix.stride   = matrix.stride;
-    subMatrix.elements = &matrix.elements[matrix.width * BLOCK_SIZE * uiRow
-                                                       + BLOCK_SIZE * uiCol];
+    subMatrix.elements = &matrix.elements[matrix.stride * BLOCK_SIZE * uiRow
+                                                        + BLOCK_SIZE * uiCol];
 
     return subMatrix;
 }
@@ -101,13 +101,13 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
     Matrix B_GPU = { 0 };
     Matrix C_GPU = { 0 };
 
-    A_GPU.width = A_GPU.height = A_GPU.stride = A.height;
-    B_GPU.width = B_GPU.height = B_GPU.stride = B.height;
-    C_GPU.width = C_GPU.height = C_GPU.stride = C.height;
+    A_GPU.width = A_GPU.height = A_GPU.stride = A.width;
+    B_GPU.width = B_GPU.height = B_GPU.stride = B.width;
+    C_GPU.width = C_GPU.height = C_GPU.stride = C.width;
 
-    dim3 blockGrid = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
-    dim3 gridShape = dim3(std::ceil((float)uiMatrixSize / (float)blockGrid.x),
-                          std::ceil((float)uiMatrixSize / (float)blockGrid.y));
+    dim3 dimBlock = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
+    dim3 dimGrid = dim3(std::ceil((float)uiMatrixSize / (float)dimBlock.x),
+                        std::ceil((float)uiMatrixSize / (float)dimBlock.y));
 
     cudaError_t cudaStatus = cudaError_t::cudaSuccess;
 
@@ -135,8 +135,8 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
         fprintf(fp,"\nDevice \"%s\" selecionado.\n", devProps.name);
         fprintf(fp,"CUDA cores: %d\t| Multiprocessadores: %d\t| Warp size: %d\n", iCUDACores, devProps.multiProcessorCount, devProps.warpSize);
         fprintf(fp,"Max Blocks Per MultiProcessor: %d\t| Max Threads per block: %d\n", devProps.maxBlocksPerMultiProcessor, devProps.maxThreadsPerBlock);
-        fprintf(fp,"Block Grid : %d - %d - %d\n", blockGrid.x, blockGrid.y, blockGrid.z);
-        fprintf(fp,"Grid  Shape: %d - %d - %d\n", gridShape.x, gridShape.y, gridShape.z);
+        fprintf(fp,"Block Dim : %d - %d - %d\n", dimBlock.x, dimBlock.y, dimBlock.z);
+        fprintf(fp,"Grid  Dim: %d - %d - %d\n", dimGrid.x, dimGrid.y, dimGrid.z);
     }
 
     auto clockInicioCuda = std::chrono::high_resolution_clock::now();
@@ -184,7 +184,7 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
     }
 
     auto clockInicioProcessamento = std::chrono::high_resolution_clock::now();
-    KernelMatrixProduct << <blockGrid, gridShape >> > (A_GPU, B_GPU, C_GPU);
+    KernelMatrixProduct << <dimBlock, dimGrid >> > (A_GPU, B_GPU, C_GPU);
 
     //Validar erros na chamada de Kernel
     cudaStatus = cudaGetLastError();
