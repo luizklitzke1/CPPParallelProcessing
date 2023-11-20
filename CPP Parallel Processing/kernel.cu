@@ -21,7 +21,7 @@ FILE* fp;
 
 #define BLOCK_SIZE 10 // Mesmo utilizado como tamanho de Tile - logo N deve ser um múltiplo de BLOCK_SIZE
 
-#define ERROR_MARGIN_PERCENTAGE 5 // Percentual de erro em float a ser ignorado ao validar diferença de CPU para GPU
+#define ERROR_MARGIN_PERCENTAGE 0 // Percentual de erro em float a ser ignorado ao validar diferença de CPU para GPU
 
 struct Matrix
 {
@@ -233,7 +233,7 @@ FreeCuda:
     return cudaStatus;
 }
 
-void LinearMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime)
+void LinearMatrixProduct(const Matrix A, const Matrix B, Matrix C, msTime& processingTime)
 {
     fprintf(fp,"\n\n[PROCESSAMENTO LINEAR - INÍCIO]\n");
 
@@ -262,7 +262,7 @@ void LinearMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrix
     fprintf(fp,"[PROCESSAMENTO LINEAR - FIM]\n");
 }
 
-void CPUConcurrencyMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime)
+void CPUConcurrencyMatrixProduct(const Matrix A, const Matrix B, Matrix C, msTime& processingTime)
 {
     fprintf(fp,"\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
@@ -379,7 +379,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsLinear.sMethod = "Linear em CPU";
-        LinearMatrixProduct(vA, vB, vCLinear, uiMatrixSizeCFG, benchResultsLinear.msTimeElapsed);
+        LinearMatrixProduct(vA, vB, vCLinear, benchResultsLinear.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsLinear);
     }
     catch (...)
@@ -392,7 +392,7 @@ int main(int argc, char **argv)
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixProduct(vA, vB, vCLinear, uiMatrixSizeCFG, benchResultsCPUThreads.msTimeElapsed);
+        CPUConcurrencyMatrixProduct(vA, vB, vCLinear, benchResultsCPUThreads.msTimeElapsed);
         aBenchResultsSuccess.push_back(benchResultsCPUThreads);
     }
     catch (...)
