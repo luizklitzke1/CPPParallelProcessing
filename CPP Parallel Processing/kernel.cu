@@ -420,7 +420,7 @@ int main(int argc, char **argv)
         cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vCParaleloCUDA, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
-            fprintf(fp,"Erro ao processar soma em CUDA");
+            fprintf(fp,"Erro ao processar em CUDA");
             throw cudaStatus;
         }
 
