@@ -307,7 +307,7 @@ int main(int argc, char **argv)
 
     {
         const std::string sTitulo   = "[Benchmark de processamento paralelo]";
-        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0 e MULTIPLO DE " + std::to_string(BLOCK_SIZE);
+        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0 e MULTIPLO DE " + std::to_string(BLOCK_SIZE) + ")";
 
         printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
@@ -432,27 +432,30 @@ int main(int argc, char **argv)
         aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAProcess, cudaGetErrorString(cudaStatus)));
     }
 
-    bool bValoresDiferem = false;
-
-    for (int i = 0; i < uiMatrixSizeCFG * uiMatrixSizeCFG; ++i)
+    if (aBenchResultsFailure.size() == 0)
     {
-        const float& fLinear       = vCLinear      .elements[i];
-        const float& fParaleloCUDA = vCParaleloCUDA.elements[i];
+        bool bValoresDiferem = false;
 
-        const float fDif              = fabs(fParaleloCUDA - fLinear);
-        const float fErrorMarginValue = fLinear * fErrorMargin;
-
-        if (fDif > fErrorMargin)
+        for (int i = 0; i < uiMatrixSizeCFG * uiMatrixSizeCFG; ++i)
         {
-            fprintf(fp, "\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\n%f\n%f\n", i, fLinear, fParaleloCUDA);
-            fprintf(fp, "\Diferença %f  - Margem: %f", fDif, fErrorMargin);
-            bValoresDiferem = true;
-        }
-    }
+            const float& fLinear       = vCLinear      .elements[i];
+            const float& fParaleloCUDA = vCParaleloCUDA.elements[i];
 
-    if (bValoresDiferem == false)
-    {
-        fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante! (%.2f%%%)\n", float(ERROR_MARGIN_PERCENTAGE));
+            const float fDif              = fabs(fParaleloCUDA - fLinear);
+            const float fErrorMarginValue = fLinear * fErrorMargin;
+
+            if (fDif > fErrorMargin)
+            {
+                fprintf(fp, "\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\n%f\n%f\n", i, fLinear, fParaleloCUDA);
+                fprintf(fp, "\Diferença %f  - Margem: %f", fDif, fErrorMargin);
+                bValoresDiferem = true;
+            }
+        }
+
+        if (bValoresDiferem == false)
+        {
+            fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante! (%.2f%%%)\n", float(ERROR_MARGIN_PERCENTAGE));
+        }
     }
 
     //Liberar valores dos ponteiros de matrizes
