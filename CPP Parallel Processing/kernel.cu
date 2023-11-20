@@ -21,8 +21,6 @@ FILE* fp;
 
 #define BLOCK_SIZE 10 // Mesmo utilizado como tamanho de Tile - logo N deve ser um múltiplo de BLOCK_SIZE
 
-#define ERROR_MARGIN_PERCENTAGE 0 // Percentual de erro em float a ser ignorado ao validar diferença de CPU para GPU
-
 struct Matrix
 {
     int width  = 0;
@@ -264,7 +262,7 @@ void LinearMatrixProduct(const Matrix A, const Matrix B, Matrix C, msTime& proce
 
 void CPUConcurrencyMatrixProduct(const Matrix A, const Matrix B, Matrix C, msTime& processingTime)
 {
-    fprintf(fp,"\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
+    fprintf(fp, "\n\n[PROCESSAMENTO CONCORRENTE EM CPU - INÍCIO]\n");
 
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
@@ -302,8 +300,9 @@ int main(int argc, char **argv)
     SetConsoleCP      (1252);
     SetConsoleOutputCP(1252);
 
-    UINT uiMatrixSizeCFG = 0;
-    const float fErrorMargin = float(ERROR_MARGIN_PERCENTAGE) / 100.0f;
+    UINT  uiMatrixSizeCFG    = 0;
+    float fErroMarginPercent = 0;
+    float fErrorMargin       = 0;
 
     {
         const std::string sTitulo   = "[Benchmark de processamento paralelo]";
@@ -319,13 +318,23 @@ int main(int argc, char **argv)
             std::cout << "Valor inválido\n";
         }
 
+        fErroMarginPercent = 0;
+        while (std::cout << "Informe a porcentagem de margem de erro: " && (!(std::cin >> fErroMarginPercent) || fErroMarginPercent < 0))
+        {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //discard input
+            std::cout << "Valor inválido\n";
+        }
+
+        fErrorMargin = float(fErroMarginPercent) / 100.0f;
+
         fp = fopen("result.txt", "a");
         fprintf(fp, "%s\n", sTitulo.c_str());
-        fprintf(fp, "\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
-        fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f%%%\n\n", float(ERROR_MARGIN_PERCENTAGE));
+        fprintf(fp, "\n[Configurações]\nOperação: %s\n\n", sOperacao.c_str());
     }
 
     fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
+    fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f%%%\n\n", float(fErroMarginPercent));
 
     Matrix vA;
     vA.width  = uiMatrixSizeCFG;
@@ -446,7 +455,7 @@ int main(int argc, char **argv)
 
             if (fDif > fErrorMargin)
             {
-                fprintf(fp, "\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\n%f\n%f\n", i, fLinear, fParaleloCUDA);
+                fprintf(fp, "\n\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\nCPU: %f\nGPU: %f\n", i, fLinear, fParaleloCUDA);
                 fprintf(fp, "\Diferença %f  - Margem: %f", fDif, fErrorMargin);
                 bValoresDiferem = true;
             }
@@ -454,7 +463,7 @@ int main(int argc, char **argv)
 
         if (bValoresDiferem == false)
         {
-            fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante! (%.2f%%%)\n", float(ERROR_MARGIN_PERCENTAGE));
+            fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante! (%.2f%%%)\n", float(fErroMarginPercent));
         }
     }
 
