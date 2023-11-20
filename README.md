@@ -2,13 +2,20 @@
 
 Alunos: Arthur B. Pinotti, Gustavo B. Bruder, Kaue Reblin, Luiz G. Klitzke, Rodrigo K. Franco.
 
-Esse repositório apresenta uma aplicação simples que busca apresentar implementações de diferentes métodos de resolver o processamento de uma multiplicação de matriz NxN por outra matriz NxN - *(N Sendo um número inteiro > 0 e MULTIPLO DE 10*
+Esse repositório apresenta uma aplicação simples que busca apresentar a diferença de tempo entre implementações de diferentes métodos de resolver o processamento de uma multiplicação de matriz NxN por outra matriz NxN - *(N Sendo um número inteiro > 0 e MULTIPLO DE 10*
+
+A aplicação faz um levantamento básicos dos dados do computador e suas capacidades de processamento e então pergunta o valor de N a ser processado, permitindo a visualização das vantagens de cada métodos perante a escala do montante de dados.
 
 Sendo eles:
 
 - Processamento linear através de 3 laços de repetição simples encadeados.
 - Processamento com paralelização em threads da CPU utilizando recursos da biblioteca padrão *Concurrency* do C++.
 - Processamento paralelizado com lógica otimizada para utilização de CUDA Cores de um device compatível.
+
+## Compilação
+Basta compilar a solution presente no repositório utilizando preferencialmente o Visual Studio 2022, possuindo as dependências da NVidia, disponíveis em: [Developer Downloads](https://developer.nvidia.com/downloads) e então executar o .exe resultante "CPP Parallel Processing.exe"
+
+
 
 ## Resultados da execução
 As configurações selecionadas, juntamente com detalhes específicos logados sobre cada tipo de execução ficam disponíveis em um arquivo chamado "results.txt", criado e atualizado no mesmo diretório aonde está o executável da aplicação: "CPP Parallel Processing.exe".
