@@ -1,4 +1,5 @@
-﻿
+﻿//Alunos: Arthur B. Pinotti, Gustavo B. Bruder, Kaue Reblin, Luiz G. Klitzke, Rodrigo K. Franco.
+
 #include <random>
 #include <stdio.h>
 #include <cassert>
@@ -9,16 +10,16 @@
 
 #include "windows.h"
 
+#include "BenchUtils.h"
+
 //Libs da NVidia para uso de CUDA Cores
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
 
-#include "BenchUtils.h"
-
 FILE* fp;
 
-#define BLOCK_SIZE 10 // Mesmo utilizado como tamanho de tile - logo N deve ser um múltiplo
+#define BLOCK_SIZE 10 // Mesmo utilizado como tamanho de Tile - logo N deve ser um múltiplo de BLOCK_SIZE
 
 #define ERROR_MARGIN_PERCENTAGE 5 // Percentual de erro em float a ser ignorado ao validar diferença de CPU para GPU
 
@@ -26,11 +27,10 @@ struct Matrix
 {
     int width  = 0;
     int height = 0;
-    int stride = 0; //Marter tamanho de largura de uma linha em matrix representada em 1xN
+    int stride = 0; //Manter tamanho de largura de uma linha em matrix representada em 1xN
 
     float* elements = nullptr;
 };
-
 
 __device__ float GetElement(const Matrix matrix, const UINT uiRow, const UINT uiCol)
 {
@@ -78,6 +78,7 @@ __global__ void KernelMatrixProduct(const Matrix A, const Matrix B, Matrix C)
         //Sincronizado entre as threads do bloco para evitar acesso à memória global e overhead
         __shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
         __shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
+
         sharedA[uiRowSub][uiColSub] = GetElement(subMatrixA, uiRowSub, uiColSub);
         sharedB[uiRowSub][uiColSub] = GetElement(subMatrixB, uiRowSub, uiColSub);
 
@@ -227,7 +228,7 @@ FreeCuda:
     fprintf(fp,"\nTempo apenas de processamento com CUDA cores: %fms\n", processingTime.count());
     fprintf(fp,"Tempo total de processamento e alocação com CUDA cores : %fms\n" , fullTime.count());
 
-    fprintf(fp,"[CUDA CORES - FIM]\n");
+    fprintf(fp,"\n[CUDA CORES - FIM]\n");
 
     return cudaStatus;
 }
@@ -305,13 +306,14 @@ int main(int argc, char **argv)
     const float fErrorMargin = float(ERROR_MARGIN_PERCENTAGE) / 100.0f;
 
     {
-        const std::string sTitulo = "[Benchmark de processamento paralelo]";
-        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0)";
+        const std::string sTitulo   = "[Benchmark de processamento paralelo]";
+        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0 e MULTIPLO DE " + std::to_string(BLOCK_SIZE);
 
         printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
 
-        while (std::cout << "Informe o valor de N: " && !(std::cin >> uiMatrixSizeCFG)) {
+        while (std::cout << "Informe o valor de N: " && (!(std::cin >> uiMatrixSizeCFG) || uiMatrixSizeCFG % BLOCK_SIZE))
+        {
             std::cin.clear();
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //discard input
             std::cout << "Valor inválido\n";
@@ -320,7 +322,7 @@ int main(int argc, char **argv)
         fp = fopen("result.txt", "a");
         fprintf(fp, "%s\n", sTitulo.c_str());
         fprintf(fp, "\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
-        fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f %\n\n", fErrorMargin);
+        fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f%%%\n\n", float(ERROR_MARGIN_PERCENTAGE));
     }
 
     fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
@@ -450,7 +452,7 @@ int main(int argc, char **argv)
 
     if (bValoresDiferem == false)
     {
-        fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante!\n");
+        fprintf(fp, "\nNenhum resultado dos métodos diferiu da margem de erro de ponto flutuante! (%.2f%%%)\n", float(ERROR_MARGIN_PERCENTAGE));
     }
 
     //Liberar valores dos ponteiros de matrizes
@@ -470,12 +472,12 @@ int main(int argc, char **argv)
     fprintf(fp, "\n\n[RESULTADOS]\n");
     fprintf(fp, "\nTempo de execução:\n");
 
-    fprintf(fp, "|%s | %-55s | %-15s | %-17s\n", "Pos", "Método", "Tempo exec.", "Dif");
+    fprintf(fp, "|%s | %-55s | %-25s | %-27s\n", "Pos", "Método", "Tempo exec.", "Dif");
     
     for (int i = 0; i < aBenchResultsSuccess.size(); ++i)
     {
         const benchResults& benchResult = aBenchResultsSuccess[i];
-        fprintf(fp, "|%d   | %-55s | %-14.6fms| +%-14.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(),
+        fprintf(fp, "|%d   | %-55s | %-24.6fms| +%-24.6fms\n", i + 1, benchResult.sMethod.c_str(), benchResult.msTimeElapsed.count(),
                                                                       benchResult.msTimeElapsed.count() - aBenchResultsSuccess.begin()->msTimeElapsed.count());
     }
 

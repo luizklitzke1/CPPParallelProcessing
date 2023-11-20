@@ -1,3 +1,5 @@
+//Alunos: Arthur B. Pinotti, Gustavo B. Bruder, Kaue Reblin, Luiz G. Klitzke, Rodrigo K. Franco.
+
 #pragma once
 
 #include "cuda_runtime.h"
