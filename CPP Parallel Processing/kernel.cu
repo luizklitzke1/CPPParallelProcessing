@@ -23,9 +23,9 @@ FILE* fp;
 
 struct Matrix
 {
-    int width  = 0;
-    int height = 0;
-    int stride = 0; //Manter tamanho de largura de uma linha em matrix representada em 1xN
+    UINT width  = 0;
+    UINT height = 0;
+    UINT stride = 0; //Manter tamanho de largura de uma linha em matrix representada em 1xN
 
     float* elements = nullptr;
 };
@@ -300,7 +300,7 @@ int main(int argc, char **argv)
     SetConsoleCP      (1252);
     SetConsoleOutputCP(1252);
 
-    UINT  uiMatrixSizeCFG    = 0;
+    int   iMatrixSizeCFG     = 0;
     float fErroMarginPercent = 0;
     float fErrorMargin       = 0;
 
@@ -311,7 +311,7 @@ int main(int argc, char **argv)
         printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
 
-        while (std::cout << "Informe o valor de N: " && (!(std::cin >> uiMatrixSizeCFG) || uiMatrixSizeCFG % BLOCK_SIZE))
+        while (std::cout << "Informe o valor de N: " && (!(std::cin >> iMatrixSizeCFG) || iMatrixSizeCFG <= 0 || iMatrixSizeCFG % BLOCK_SIZE))
         {
             std::cin.clear();
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //discard input
@@ -333,24 +333,24 @@ int main(int argc, char **argv)
         fprintf(fp, "\n[Configurações]\nOperação: %s\n\n", sOperacao.c_str());
     }
 
-    fprintf(fp, "Valor de N: %d\n", uiMatrixSizeCFG);
+    fprintf(fp, "Valor de N: %d\n", iMatrixSizeCFG);
     fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f%%%\n\n", float(fErroMarginPercent));
 
     Matrix vA;
-    vA.width  = uiMatrixSizeCFG;
-    vA.height = uiMatrixSizeCFG;
+    vA.width  = iMatrixSizeCFG;
+    vA.height = iMatrixSizeCFG;
 
     Matrix vB;
-    vB.width  = uiMatrixSizeCFG;
-    vB.height = uiMatrixSizeCFG;
+    vB.width  = iMatrixSizeCFG;
+    vB.height = iMatrixSizeCFG;
 
     Matrix vCLinear;
-    vCLinear.width  = uiMatrixSizeCFG;
-    vCLinear.height = uiMatrixSizeCFG;
+    vCLinear.width  = iMatrixSizeCFG;
+    vCLinear.height = iMatrixSizeCFG;
 
     Matrix vCParaleloCUDA;
-    vCParaleloCUDA.width  = uiMatrixSizeCFG;
-    vCParaleloCUDA.height = uiMatrixSizeCFG;
+    vCParaleloCUDA.width  = iMatrixSizeCFG;
+    vCParaleloCUDA.height = iMatrixSizeCFG;
 
     vA.elements = (float*)malloc(vA.width * vA.height * sizeof(float));
     vB.elements = (float*)malloc(vB.width * vB.height * sizeof(float));
@@ -365,14 +365,14 @@ int main(int argc, char **argv)
 
         std::uniform_real_distribution<> getRandReal(0.1, 20.0);
 
-        for (int i = 0; i < uiMatrixSizeCFG; ++i)
+        for (int i = 0; i < iMatrixSizeCFG; ++i)
         {
             //Memoryu for coalesced access
             //vA e vB . elements é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
-            for (int j = 0; j < uiMatrixSizeCFG; ++j)
+            for (int j = 0; j < iMatrixSizeCFG; ++j)
             {
-                vA.elements[i * uiMatrixSizeCFG + j] = getRandReal(rng);
-                vB.elements[i * uiMatrixSizeCFG + j] = getRandReal(rng);
+                vA.elements[i * iMatrixSizeCFG + j] = getRandReal(rng);
+                vB.elements[i * iMatrixSizeCFG + j] = getRandReal(rng);
             }
         }
     }
@@ -417,7 +417,7 @@ int main(int argc, char **argv)
         benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
         benchResultsCUDAProcess.sMethod = "Concorrência em CUDA Cores - Apenas processamento";
 
-        cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vCParaleloCUDA, uiMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
+        cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vCParaleloCUDA, iMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
             fprintf(fp,"Erro ao processar em CUDA");
@@ -445,7 +445,7 @@ int main(int argc, char **argv)
     {
         bool bValoresDiferem = false;
 
-        for (int i = 0; i < uiMatrixSizeCFG * uiMatrixSizeCFG; ++i)
+        for (int i = 0; i < iMatrixSizeCFG * iMatrixSizeCFG; ++i)
         {
             const float& fLinear       = vCLinear      .elements[i];
             const float& fParaleloCUDA = vCParaleloCUDA.elements[i];
