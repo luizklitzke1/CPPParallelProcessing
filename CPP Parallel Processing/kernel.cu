@@ -367,7 +367,6 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < iMatrixSizeCFG; ++i)
         {
-            //Memoryu for coalesced access
             //vA e vB . elements é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
             for (int j = 0; j < iMatrixSizeCFG; ++j)
             {
@@ -381,33 +380,6 @@ int main(int argc, char **argv)
     aBenchResultsSuccess.reserve(3);
 
     std::vector<std::pair<benchResults, std::string>> aBenchResultsFailure;
-
-    //Processamento linear em CPU
-    benchResults benchResultsLinear;
-
-    try
-    {
-        benchResultsLinear.sMethod = "Linear em CPU";
-        LinearMatrixProduct(vA, vB, vCLinear, benchResultsLinear.msTimeElapsed);
-        aBenchResultsSuccess.push_back(benchResultsLinear);
-    }
-    catch (...)
-    {
-        aBenchResultsFailure.push_back(std::make_pair(benchResultsLinear, "Desconhecido"));
-    }
-
-    //Processamento com concorrencia em CPU
-    benchResults benchResultsCPUThreads;
-    try
-    {
-        benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
-        CPUConcurrencyMatrixProduct(vA, vB, vCLinear, benchResultsCPUThreads.msTimeElapsed);
-        aBenchResultsSuccess.push_back(benchResultsCPUThreads);
-    }
-    catch (...)
-    {
-        aBenchResultsFailure.push_back(std::make_pair(benchResultsCPUThreads, "Desconhecido"));
-    }
 
     //Processamento paralelo com CUDA cores
     benchResults benchResultsCUDAFull   ;
@@ -439,6 +411,33 @@ int main(int argc, char **argv)
     {
         aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAFull   , cudaGetErrorString(cudaStatus)));
         aBenchResultsFailure.push_back(std::make_pair(benchResultsCUDAProcess, cudaGetErrorString(cudaStatus)));
+    }
+
+    //Processamento linear em CPU
+    benchResults benchResultsLinear;
+
+    try
+    {
+        benchResultsLinear.sMethod = "Linear em CPU";
+        LinearMatrixProduct(vA, vB, vCLinear, benchResultsLinear.msTimeElapsed);
+        aBenchResultsSuccess.push_back(benchResultsLinear);
+    }
+    catch (...)
+    {
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsLinear, "Desconhecido"));
+    }
+
+    //Processamento com concorrencia em CPU
+    benchResults benchResultsCPUThreads;
+    try
+    {
+        benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
+        CPUConcurrencyMatrixProduct(vA, vB, vCLinear, benchResultsCPUThreads.msTimeElapsed);
+        aBenchResultsSuccess.push_back(benchResultsCPUThreads);
+    }
+    catch (...)
+    {
+        aBenchResultsFailure.push_back(std::make_pair(benchResultsCPUThreads, "Desconhecido"));
     }
 
     if (aBenchResultsFailure.size() == 0)
