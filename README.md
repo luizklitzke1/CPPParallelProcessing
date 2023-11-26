@@ -15,7 +15,10 @@ Sendo eles:
 ## Compilação
 Basta compilar a solution presente no repositório utilizando preferencialmente o Visual Studio 2022, possuindo as dependências da NVidia, disponíveis em: [Developer Downloads](https://developer.nvidia.com/downloads) e então executar o .exe resultante "CPP Parallel Processing.exe"
 
+Versão compilada em release x64 para teste disponível através de [Google Drive](https://drive.google.com/file/d/1NMwwaCIJmI3PDzyiSb_0kfQ7NRF67Kwd/view?usp=sharing).
 
+## Execução
+Rodar o executável gerado "CPP Parallel Processing.exe", informar um valor válido para N e outro para a porcentagem de margem de erro desejada (vide tópico abaixo para mais informações).
 
 ## Resultados da execução
 As configurações selecionadas, juntamente com detalhes específicos logados sobre cada tipo de execução ficam disponíveis em um arquivo chamado "results.txt", criado e atualizado no mesmo diretório aonde está o executável da aplicação: "CPP Parallel Processing.exe".
@@ -62,10 +65,9 @@ Nenhum método apresentou erro!
 ### Diferença de valores
 
 No final do processamento, caso não tenham ocorrido erros no processamento, os valores resultantes das operações são comparados.
-Foi definida  uma margem de erro de 5% entre os valores de ponto flutuante resultados do processamento da CPU e da GPU, devido à divergência inerte de processamento e representação desse tipo de dado.
+Ao executar o programa, é recebida uma margem de erro entre os valores de ponto flutuante resultados do processamento da CPU e da GPU, devido à divergência inerte de processamento e representação desse tipo de dado.
 
 Não foram utilizadas variáveis do tipo double, de maior precisão, devido à limitação de algumas GPUs processarem esse tipo de dado.
+Vale ressaltar que essa margem foi adotada para acomodar ranges maiores de N, uma vez que a disparidade cresce conforme a quantidade de operações realizadas.
 
 En caso de erros, as diferenças são logadas no arquivo result.txt, juntamente com o quanto diferem da original. 
-
-Vale ressaltar que essa margem foi adotada para acomodar ranges maiores de N, uma vez que a disparidade cresce conforme a quantidade de operações realizadas.
