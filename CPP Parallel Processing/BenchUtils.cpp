@@ -4,6 +4,7 @@
 #include <string_view>
 #include <thread>
 #include "windows.h"
+#include <time.h>
 
 #include "BenchUtils.h"
 #include "sysinfoapi.h"
@@ -45,4 +46,17 @@ int CBenchUtils::GetCudaCores(cudaDeviceProp devProp)
     }
 
     return cores;
+}
+
+std::string CBenchUtils::GetTimeString()
+{
+    time_t now;
+    struct tm* tm_now;
+    char texto[40];
+
+    time(&now);
+    tm_now = localtime(&now);
+    strftime(texto, sizeof(texto), "%d/%m/%Y - %H:%M:%S", tm_now);
+
+    return texto;
 }

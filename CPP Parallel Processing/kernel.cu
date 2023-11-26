@@ -330,6 +330,7 @@ int main(int argc, char **argv)
 
         fp = fopen("result.txt", "a");
         fprintf(fp, "%s\n", sTitulo.c_str());
+        fprintf(fp, "Executado em: %s\n", CBenchUtils::GetTimeString().c_str());
         fprintf(fp, "\n[Configurações]\nOperação: %s\n\n", sOperacao.c_str());
     }
 
@@ -504,7 +505,7 @@ int main(int argc, char **argv)
         fprintf(fp, "\n\nNenhum método apresentou erro!\n");
     }
 
-    fprintf(fp, "\n%s\n", std::string(110, '-').c_str());
+    fprintf(fp, "\n%s\n", std::string(120, '-').c_str());
 
     fclose(fp);
 

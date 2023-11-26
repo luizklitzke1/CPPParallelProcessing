@@ -18,4 +18,5 @@ class CBenchUtils
 {
 public:
     static int GetCudaCores(cudaDeviceProp devProp);
+    static std::string GetTimeString();
 };
