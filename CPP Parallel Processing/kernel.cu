@@ -62,36 +62,37 @@ __global__ void KernelMatrixProduct(const Matrix A, const Matrix B, Matrix C)
 
     float fSoma = 0;
 
-    //Indices da da submatriz computados pela thread
-    const UINT uiRowSub = threadIdx.y;
-    const UINT uiColSub = threadIdx.x;
+    //Indices da submatriz computados pela thread
+    const UINT uiThreadRow = threadIdx.y;
+    const UINT uiThreadCol = threadIdx.x;
 
     for (size_t idxSubMatrix = 0; idxSubMatrix < (A.width / BLOCK_SIZE); ++idxSubMatrix)
     {
-        //Sumatrizes de A e B a serem computados para submatriz de C
+        //Sumatrizes de A e B a serem computadas para submatriz de C
         const Matrix subMatrixA = GetSubMatrix(A, uiBlockRow  , idxSubMatrix);
         const Matrix subMatrixB = GetSubMatrix(B, idxSubMatrix, uiBlockCol  );
 
         //Cache de memória do bloco a ser computado pela thread das submatrizes de A e B
-        //Sincronizado entre as threads do bloco para evitar acesso à memória global e overhead
         __shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
         __shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
 
-        sharedA[uiRowSub][uiColSub] = GetElement(subMatrixA, uiRowSub, uiColSub);
-        sharedB[uiRowSub][uiColSub] = GetElement(subMatrixB, uiRowSub, uiColSub);
+        sharedA[uiThreadRow][uiThreadCol] = GetElement(subMatrixA, uiThreadRow, uiThreadCol);
+        sharedB[uiThreadRow][uiThreadCol] = GetElement(subMatrixB, uiThreadRow, uiThreadCol);
 
+        //Espera todas as threads do bloco carregarem suas sub-matrizes em memória compartilhada
         __syncthreads();
 
         for (size_t idxItemTile = 0; idxItemTile < BLOCK_SIZE; ++idxItemTile)
         {
-            fSoma += sharedA[uiRowSub][idxItemTile] * sharedB[idxItemTile][uiColSub];
+            fSoma += sharedA[uiThreadRow][idxItemTile] * sharedB[idxItemTile][uiThreadCol];
         }
 
+        //Espera todas as threads computarem um pedaço para seguir para a próxima
         __syncthreads();
     }
 
     //Escrever resultado computado localmente para a matrix C global
-    SetElement(subMatrixC, uiRowSub, uiColSub, fSoma);
+    SetElement(subMatrixC, uiThreadRow, uiThreadCol, fSoma);
 }
 
 cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiMatrixSize, msTime& processingTime, msTime& fullTime)
@@ -368,7 +369,7 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < iMatrixSizeCFG; ++i)
         {
-            //vA e vB . elements é uma matrix N * N, porém representada linearmente para facilitar blocos de CUDA posteriormente
+            //vA e vB . elements é uma matrix N * N, porém representada linearmente em memória para reduzir acesso - Coalesced memory
             for (int j = 0; j < iMatrixSizeCFG; ++j)
             {
                 vA.elements[i * iMatrixSizeCFG + j] = getRandReal(rng);
@@ -455,7 +456,7 @@ int main(int argc, char **argv)
 
             if (fDif > fErrorMargin)
             {
-                fprintf(fp, "\n\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d\nCPU: %f\nGPU: %f\n", i, fLinear, fParaleloCUDA);
+                fprintf(fp, "\n\nDIFERENÇA DE VALORES FORA DA MARGEM DE ERRO DE FLOAT - idx %d - [%d][%d]\nCPU: %f\nGPU: %f\n", i, i / iMatrixSizeCFG, i - (i / iMatrixSizeCFG * iMatrixSizeCFG), fLinear, fParaleloCUDA);
                 fprintf(fp, "\Diferença %f  - Margem: %f", fDif, fErrorMargin);
                 bValoresDiferem = true;
             }
