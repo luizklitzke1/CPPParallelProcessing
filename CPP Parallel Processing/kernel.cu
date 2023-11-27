@@ -7,6 +7,7 @@
 #include <ppl.h>
 #include <iostream>
 #include <string>
+#include <conio.h>
 
 #include "windows.h"
 
@@ -509,6 +510,9 @@ int main(int argc, char **argv)
     fprintf(fp, "\n%s\n", std::string(120, '-').c_str());
 
     fclose(fp);
+
+    printf("\nExecução finalizada, resultados salvos no arquivo results.txt, presente no mesmo path desse executável.\n\nPrecione qualquer tecla para fechar o terminal.\n");
+    _getch();
 
     return 0;
 }
