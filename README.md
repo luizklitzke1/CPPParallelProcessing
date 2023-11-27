@@ -15,8 +15,6 @@ Sendo eles:
 ## Compilação
 Basta compilar a solution presente no repositório utilizando preferencialmente o Visual Studio 2022, possuindo as dependências da NVidia, disponíveis em: [Developer Downloads](https://developer.nvidia.com/downloads) e então executar o .exe resultante "CPP Parallel Processing.exe"
 
-Versão compilada em release x64 para teste disponível através de [Google Drive](https://drive.google.com/file/d/1NMwwaCIJmI3PDzyiSb_0kfQ7NRF67Kwd/view?usp=sharing).
-
 ## Execução
 Rodar o executável gerado "CPP Parallel Processing.exe", informar um valor válido para N e outro para a porcentagem de margem de erro desejada (vide tópico abaixo para mais informações).
 
