@@ -215,15 +215,15 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
         goto FreeCuda;
     }
 
-FreeCuda:
-    cudaFree(A_GPU.elements);
-    cudaFree(B_GPU.elements);
-    cudaFree(C_GPU.elements);
-
     auto clockFimCuda = std::chrono::high_resolution_clock::now();
 
     processingTime = clockFinalProcessamento - clockInicioProcessamento;
     fullTime       = clockFimCuda            - clockInicioCuda        ;
+
+FreeCuda:
+    cudaFree(A_GPU.elements);
+    cudaFree(B_GPU.elements);
+    cudaFree(C_GPU.elements);
 
     fprintf(fp,"\nTempo apenas de processamento com CUDA cores: %fms\n", processingTime.count());
     fprintf(fp,"Tempo total de processamento e alocação com CUDA cores : %fms\n" , fullTime.count());
@@ -387,6 +387,10 @@ int main(int argc, char **argv)
     //Processamento paralelo com CUDA cores
     benchResults benchResultsCUDAFull   ;
     benchResults benchResultsCUDAProcess;
+
+    benchResultsCUDAFull   .msTimeElapsed = std::chrono::nanoseconds::zero();
+    benchResultsCUDAProcess.msTimeElapsed = std::chrono::nanoseconds::zero();
+
     try
     {
         benchResultsCUDAFull   .sMethod = "Concorrência em CUDA Cores - Com Alocação";
@@ -418,6 +422,7 @@ int main(int argc, char **argv)
 
     //Processamento linear em CPU
     benchResults benchResultsLinear;
+    benchResultsLinear.msTimeElapsed = std::chrono::nanoseconds::zero();
 
     try
     {
@@ -432,6 +437,8 @@ int main(int argc, char **argv)
 
     //Processamento com concorrencia em CPU
     benchResults benchResultsCPUThreads;
+    benchResultsCPUThreads.msTimeElapsed = std::chrono::nanoseconds::zero();
+
     try
     {
         benchResultsCPUThreads.sMethod = "Concorrência em Threads de CPU";
