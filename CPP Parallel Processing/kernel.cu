@@ -150,7 +150,7 @@ cudaError_t CUDAMatrixProduct(const Matrix A, const Matrix B, Matrix C, UINT uiM
         cudaStatus = cudaMalloc(&A_GPU.elements, A_GPU.width * A_GPU.height * sizeof(float));
         if (cudaStatus != cudaSuccess) 
         {
-            fprintf(fp,"Erroi ao alocar memória da matriz A - cudaMalloc()");
+            fprintf(fp,"Erro ao alocar memória da matriz A - cudaMalloc()");
             goto FreeCuda;
         }
 
@@ -270,7 +270,7 @@ void CPUConcurrencyMatrixProduct(const Matrix A, const Matrix B, Matrix C, msTim
     GetSystemInfo(&sysInfo);
     const UINT uiSupportedThreads = std::thread::hardware_concurrency();
 
-    fprintf(fp, "Threads por core: %hd\n", uiSupportedThreads);
+    fprintf(fp, "Threads suportadas: %hd\n", uiSupportedThreads);
 
     auto clockInicio = std::chrono::high_resolution_clock::now();
 
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 
     {
         const std::string sTitulo   = "[Benchmark de processamento paralelo]";
-        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0 e MULTIPLO DE " + std::to_string(BLOCK_SIZE) + ")";
+        const std::string sOperacao = "Multiplicação de matriz NxN por outra matriz NxN - (N Sendo um número inteiro > 0 e MÚLTIPLO DE " + std::to_string(BLOCK_SIZE) + ")";
 
         printf("%s\n", sTitulo.c_str());
         printf("\n[Configurações]\nOperação: %s\n", sOperacao.c_str());
@@ -337,7 +337,7 @@ int main(int argc, char **argv)
     }
 
     fprintf(fp, "Valor de N: %d\n", iMatrixSizeCFG);
-    fprintf(fp, "Margem de erro para cáculos de ponto flutuante: %.2f%%%\n\n", float(fErroMarginPercent));
+    fprintf(fp, "Margem de erro para cálculos de ponto flutuante: %.2f%%%\n\n", float(fErroMarginPercent));
 
     Matrix vA;
     vA.width  = iMatrixSizeCFG;
@@ -399,7 +399,7 @@ int main(int argc, char **argv)
         cudaError_t cudaStatus = CUDAMatrixProduct(vA, vB, vCParaleloCUDA, iMatrixSizeCFG, benchResultsCUDAProcess.msTimeElapsed, benchResultsCUDAFull.msTimeElapsed);
         if (cudaStatus != cudaSuccess)
         {
-            fprintf(fp,"Erro ao processar em CUDA");
+            fprintf(fp, "Erro ao processar em CUDA");
             throw cudaStatus;
         }
 
@@ -407,7 +407,7 @@ int main(int argc, char **argv)
         cudaStatus = cudaDeviceReset();
         if (cudaStatus != cudaSuccess)
         {
-            fprintf(fp,"Erro ao executar cudaDeviceReset()");
+            fprintf(fp, "Erro ao executar cudaDeviceReset()");
             throw cudaStatus;
         }
 
@@ -518,7 +518,7 @@ int main(int argc, char **argv)
 
     fclose(fp);
 
-    printf("\nExecução finalizada, resultados salvos no arquivo results.txt, presente no mesmo path desse executável.\n\nPrecione qualquer tecla para fechar o terminal.\n");
+    printf("\nExecução finalizada, resultados salvos no arquivo results.txt, presente no mesmo path desse executável.\n\nInforme qualquer tecla para fechar o terminal.\n");
     _getch();
 
     return 0;
